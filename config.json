@@ -1,0 +1,20 @@
+{
+    "sourceID": "", 
+    "isMonarch": false,
+    "disableField": "",
+    "disableValue": [""],
+    "groupTypes": "",
+    "groupDelimiter": "",
+    "isUpload": false,
+    "headerRow": 1,
+    "trimTopRows": 0,
+    "trimBottomRows": 0,
+    "trimLeftColumns": 0,
+    "trimRightColumns": 0,
+    "dropColumns": "",
+    "columnsToMerge": "",
+    "mergedColumnName": "",
+    "schema": "",
+    "adminColumnName": "",
+    "adminColumnValue": ""
+}
