@@ -16,5 +16,7 @@
     "mergedColumnName": "",
     "schema": "",
     "adminColumnName": "",
-    "adminColumnValue": ""
+    "adminColumnValue": "",
+    "booleanColumnList": "",
+    "booleanColumnValue": ""
 }

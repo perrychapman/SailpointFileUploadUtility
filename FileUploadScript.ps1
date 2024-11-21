@@ -11,11 +11,13 @@
 # =====================================================================
 # Changelog
 #
-# Version: v9
+# [11/18/2024]
 # - Added adminColumnName and adminColumnValue for admin role assignment.
 # - Updated Process-ImportedData to set Role as "Admin" or "User" based on column value.
 # - Added support for txt file handling.
-# - Error fix for clientURL parameter
+# 
+# [11/21/2024]
+# - Added booleanValue processing for files.
 # =====================================================================
 
 
@@ -99,7 +101,7 @@ function Write-Log {
         [string]$logType = 'INFO'  # Log type (INFO/ERROR/WARNING)
     )
 
-    $currentDateTime = Get-Date -Format "MM/dd/yyyy HH:mm:ss"
+    $currentDateTime = Get-Date -Format "HH:mm:ss"
     $logEntry = [PSCustomObject]@{
         'Date/Time'   = $currentDateTime
         'Log Type'    = $logType
@@ -387,6 +389,8 @@ function Process-FilesInAppFolder {
     $mergedColumnName = $AppConfig.mergedColumnName
     $adminColumnName = $AppConfig.adminColumnName
     $adminColumnValue = $AppConfig.adminColumnValue
+    $booleanColumns = $AppConfig.booleanColumnList.Split(",").Trim()
+    $booleanValue = $AppConfig.booleanColumnValue
 
     $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
 
@@ -451,6 +455,43 @@ function Process-FilesInAppFolder {
         Write-Log -logDetails "No data found in $($file.Name) after trimming. Skipping processing." -logFilePath $AppLogFilePath -logType 'WARNING'
         continue
     }
+
+    # Boolean value processing
+    # Modify processed file to replace entitlement columns with Role column
+    if ($booleanColumns.Count -gt 0 -and $booleanValue) {
+        $groupTypes = "Role"
+        $groupDelimiter = ","
+
+        try {
+            $users = $users | ForEach-Object {
+                # Extract matched entitlements
+                $entitlements = @()
+                foreach ($col in $booleanColumns) {
+                    if ($_.PSObject.Properties[$col] -and $_."$col" -eq $booleanValue) {
+                        $entitlements += $col
+                    }
+                }
+
+                # Add Role column with comma-separated entitlements
+                $_ | Add-Member -Name "Role" -MemberType NoteProperty -Value ($entitlements -join ", ") -Force
+
+                # Remove the original entitlement columns
+                foreach ($col in $booleanColumns) {
+                    $_.PSObject.Properties.Remove($col)
+                }
+
+                $_
+            }
+
+            # Log successful transformation
+            Write-Log -logDetails "Replaced entitlement columns with Role column in processed file." -logFilePath $AppLogFilePath -logType 'INFO'
+        }
+        catch {
+            # Log any errors
+            Write-Log -logDetails "Error processing entitlement columns: $_" -logFilePath $AppLogFilePath -logType 'ERROR'
+        }
+    }
+
 
     # Export the processed data (before grouping)
     try {
@@ -519,9 +560,6 @@ $ClientID = $SettingsObject.ClientID
 $ClientSecret = $SettingsObject.ClientSecret
 $AppFilter = if ($SettingsObject.AppFilter -eq $null) {"*"} else {$SettingsObject.AppFilter}
 
-# Initialize counters
-$errorCount = 0
-
 # Main Execution
 $AppFolders = Get-ChildItem -Filter $AppFilter -Path $targetDirectory -Directory
 $startTime = Get-Date
@@ -534,6 +572,7 @@ $uploadCount = 0
 Write-Log -logDetails "Script started at $($startTime.ToString("MM/dd/yyyy HH:mm:ss"))" -logFilePath $executionLogFilePath -logType 'INFO'
 
 foreach ($AppFolder in $AppFolders) {
+    $startAppTime = Get-Date
     $AppFolderPath = $AppFolder.FullName
     $AppFolderName = $AppFolder.Name
     $configFilePath = Join-Path -Path $AppFolderPath -ChildPath "config.json"
@@ -555,7 +594,10 @@ foreach ($AppFolder in $AppFolders) {
         # Process files in the folder
         Process-FilesInAppFolder -AppFolderPath $AppFolderPath -AppConfig $AppConfig -AppLogFilePath $AppLogFilePath -SettingsObject $SettingsObject
         
-        Write-Log -logDetails "Processing completed for $AppFolderName." -logFilePath $executionLogFilePath -logType 'INFO'
+        $endAppTime = Get-Date
+        $appDuration = New-TimeSpan -Start $startAppTime -End $endAppTime
+        Write-Log -logDetails "Processing completed for $AppFolderName. Duration: $($appDuration.ToString())" -logFilePath $executionLogFilePath -logType 'INFO'
+        Write-Log -logDetails "Processing completed for $AppFolderName. Duration: $($appDuration.ToString())" -logFilePath $AppLogFilePath -logType 'INFO'
         $processedCount++
     }
     catch {
@@ -565,5 +607,5 @@ foreach ($AppFolder in $AppFolders) {
 }
 
 $endTime = Get-Date
-$duration = New-TimeSpan -Start $startTime -End $endTime
-Write-Log -logDetails "Script completed at $($endTime.ToString("MM/dd/yyyy HH:mm:ss")). Duration: $($duration.ToString()). Total Apps: $totalAppCount. Processed: $processedCount. Skipped: $skippedCount. Errors: $errorCount. Successful Uploads: $uploadCount." -logFilePath $executionLogFilePath -logType 'INFO'
+$scriptDuration = New-TimeSpan -Start $startTime -End $endTime
+Write-Log -logDetails "Script completed at $($endTime.ToString("MM/dd/yyyy HH:mm:ss")). Duration: $($scriptDuration.ToString()). Total Apps: $totalAppCount. Processed: $processedCount. Skipped: $skippedCount. Errors: $errorCount. Successful Uploads: $uploadCount." -logFilePath $executionLogFilePath -logType 'INFO'
