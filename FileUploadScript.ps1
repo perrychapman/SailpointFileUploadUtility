@@ -389,7 +389,7 @@ function Process-FilesInAppFolder {
     $mergedColumnName = $AppConfig.mergedColumnName
     $adminColumnName = $AppConfig.adminColumnName
     $adminColumnValue = $AppConfig.adminColumnValue
-    $booleanColumns = $AppConfig.booleanColumnList.Split(",").Trim()
+    $booleanColumns = if ($AppConfig.booleanColumnList -ne $null) {$AppConfig.booleanColumnList.Split(",").Trim() } else { @() }
     $booleanValue = $AppConfig.booleanColumnValue
 
     $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
