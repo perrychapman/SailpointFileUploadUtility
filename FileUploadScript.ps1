@@ -1,5 +1,5 @@
 # =====================================================================
-# PowerShell Script: FileImportUtility.ps1
+# PowerShell Script: FileUploadScript.ps1
 # Description: Processes CSV and Excel files using config settings by app,
 #              prepares data for upload, and then uploads processed file
 #              to Sailpoint
@@ -18,6 +18,10 @@
 # 
 # [11/21/2024]
 # - Added booleanValue processing for files.
+#
+# [12/17/2024]
+# - Added fixes for AppFilter logic
+# - Added improvements to Ensure-ImportExcelModule for no internet connectivity scenarios.
 # =====================================================================
 
 
@@ -31,37 +35,43 @@ function Ensure-ImportExcelModule {
     )
 
     $importedModule = Get-Module -Name $ModuleName
-
     if ($importedModule) {
         Write-Host "Module '$ModuleName' is already imported."
         return
     }
 
     $availableModule = Get-Module -ListAvailable -Name $ModuleName
-
-    if (-not $availableModule) {
-        Write-Host "Module '$ModuleName' is not installed. Attempting to install..."
+    if ($availableModule) {
+        Write-Host "Module '$ModuleName' is already installed locally."
         try {
-            Install-Module -Name $ModuleName -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            Write-Host "Module '$ModuleName' installed successfully."
+            Import-Module $ModuleName -ErrorAction Stop
+            Write-Host "Module '$ModuleName' imported successfully."
+            return
         }
         catch {
-            Write-Error "Failed to install module '$ModuleName'. Error: $_"
-            Write-Error "Please ensure you have internet connectivity and the necessary permissions."
+            Write-Error "Failed to import module '$ModuleName'. Error: $_"
             exit 1
         }
     }
-    else {
-        Write-Host "Module '$ModuleName' is already installed."
+
+    # Check for PowerShell repository availability
+    $repository = Get-PSRepository -Name 'PSGallery' -ErrorAction SilentlyContinue
+    if (-not $repository -or $repository.SourceLocation -eq $null) {
+        Write-Warning "PowerShell Gallery repository is not available. Module '$ModuleName' cannot be installed. Ensure the module is pre-installed on this server."
+        return
     }
 
+    # Attempt to install the module
+    Write-Host "Module '$ModuleName' is not installed. Attempting to install..."
     try {
+        Install-Module -Name $ModuleName -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+        Write-Host "Module '$ModuleName' installed successfully."
         Import-Module $ModuleName -ErrorAction Stop
         Write-Host "Module '$ModuleName' imported successfully."
     }
     catch {
-        Write-Error "Failed to import module '$ModuleName'. Error: $_"
-        exit 1
+        Write-Warning "Failed to install module '$ModuleName' due to error: $_"
+        Write-Warning "Please ensure the module is installed manually or PowerShell Gallery access is available."
     }
 }
 
@@ -558,18 +568,35 @@ $fileUploadUtility = $SettingsObject.FileUploadUtility
 $clientURL = "https://$tenant.api.identitynow.com"
 $ClientID = $SettingsObject.ClientID
 $ClientSecret = $SettingsObject.ClientSecret
-$AppFilter = if ($SettingsObject.AppFilter -eq $null) {"*"} else {$SettingsObject.AppFilter}
 
 # Main Execution
-$AppFolders = Get-ChildItem -Filter $AppFilter -Path $targetDirectory -Directory
 $startTime = Get-Date
-$totalAppCount = $AppFolders.Count
+$totalAppCount = 0
 $processedCount = 0
 $skippedCount = 0
 $errorCount = 0
 $uploadCount = 0
+$AppFilter = $SettingsObject.AppFilter
 
-Write-Log -logDetails "Script started at $($startTime.ToString("MM/dd/yyyy HH:mm:ss"))" -logFilePath $executionLogFilePath -logType 'INFO'
+if ([string]::IsNullOrWhiteSpace($AppFilter)) {
+    # If AppFilter is null or empty, process all folders
+    $AppFilter = ".*"
+    Write-Log -logDetails "Script started at $($startTime.ToString("MM/dd/yyyy HH:mm:ss"))" -logFilePath $executionLogFilePath -logType 'INFO'
+} else {
+    # Escape special regex characters and convert to regex for substring match
+    $escapedFilter = [regex]::Escape($AppFilter)
+    $AppFilter = ".*$escapedFilter.*"
+    Write-Log -logDetails "Script started at $($startTime.ToString("MM/dd/yyyy HH:mm:ss")) with filter on '$($SettingsObject.AppFilter)'." -logFilePath $executionLogFilePath -logType 'INFO'
+}
+
+# Fetch and filter app folders using wildcard filter
+$AppFolders = Get-ChildItem -Path $targetDirectory -Directory | Where-Object { $_.Name -match $AppFilter }
+$totalAppCount = $AppFolders.Count
+
+if ($totalAppCount -eq 0) {
+    Write-Log -logDetails "No folders matching filter '$($AppFilter)' found in $targetDirectory. Script exiting." -logFilePath $executionLogFilePath -logType 'WARNING'
+    exit
+}
 
 foreach ($AppFolder in $AppFolders) {
     $startAppTime = Get-Date
