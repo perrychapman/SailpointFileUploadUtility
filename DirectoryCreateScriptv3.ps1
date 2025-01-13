@@ -28,7 +28,7 @@ function Run-Script {
     $csvPath = Join-Path -Path $parentDirectory -ChildPath "AppList_$tenant.csv"
 
     # Ensure ExecutionLog folder exists
-    $executionLogPath = Join-Path -Path $parentDirectory -ChildPath "ExecutionLog"
+    $executionLogPath = "./ExecutionLog"
     if (-not (Test-Path -Path $executionLogPath)) {
         New-Item -Path $executionLogPath -ItemType Directory
         Write-Log "Created ExecutionLog folder."
@@ -56,7 +56,7 @@ function Run-Script {
     #Fetch sources from the API
     try {
         $rawSources = Invoke-RestMethod -Uri "https://$tenant.api.identitynow.com/beta/sources" -Method Get -Headers $headers -ContentType "application/json;charset=utf-8"
-        $rawJsonPath = "$parentDirectory\raw_api_response.json"
+        $rawJsonPath = ".\raw_api_response.json"
         $rawSources | Out-File -FilePath $rawJsonPath -Encoding UTF8
         Write-Log "Raw API response saved."
 
@@ -153,7 +153,7 @@ function Run-Script {
             Write-Log "Folder $appFolderPath already exists. Skipping folder creation."
         }
 
-        <# Create the config.json file only if it doesn't already exist
+        # Create the config.json file only if it doesn't already exist
         $configFilePath = Join-Path -Path $appFolderPath -ChildPath "config.json"
         if (-not (Test-Path -Path $configFilePath)) {
             $configContent = @"
@@ -173,30 +173,34 @@ function Run-Script {
     "dropColumns": "",
     "columnsToMerge": "", 
     "mergedColumnName": "",
+    "adminColumnName": "",
+    "adminColumnValue": "",
+    "schema": "",
+    "booleanColumnList": "",
+    "booleanColumnValue": ""
 }
 "@
             Set-Content -Path $configFilePath -Value $configContent
             Write-Log "Config file created at: $configFilePath"
         } else {
             Write-Log "Config file already exists. Skipping creation."
-        }#>
-
-
-        # Check if isDebug is false, then delete raw_api_response.json
-        if (-not $SettingsObject.isDebug) {
-            if (Test-Path -Path $rawJsonPath) {
-                try {
-                    Remove-Item -Path $rawJsonPath -Force
-                    Write-Log "Debugging turned off. Deleted raw_api_response.json"
-                } catch {
-                    Write-Log "ERROR: Failed to delete raw_api_response.json. Details: $_"
-                }
-            }
-        } else {
-            Write-Log "Debug mode is enabled (isDebug = true). raw_api_response.json not deleted."
         }
 
         $counter++
+    }
+
+    # Check if isDebug is false, then delete raw_api_response.json
+    if (-not $SettingsObject.isDebug) {
+        if (Test-Path -Path $rawJsonPath) {
+            try {
+                Remove-Item -Path $rawJsonPath -Force
+                Write-Log "Debugging turned off. Deleted raw_api_response.json"
+            } catch {
+                Write-Log "ERROR: Failed to delete raw_api_response.json. Details: $_"
+            }
+        }
+    } else {
+        Write-Log "[DEBUG] Debug mode is enabled - raw_api_response.json not deleted."
     }
 }
 
@@ -211,6 +215,9 @@ function Create-DefaultSettings {
         ClientID           = "ClientID"
         tenant             = "tenant"
         isDebug            = $true  # Default to true for debugging
+        AppFilter          = ""
+        enableFileDeletion = false
+        DaysToKeepFiles    = 30
     }
 
     # Convert to JSON and save to settings.json

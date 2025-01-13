@@ -22,6 +22,9 @@
 # [12/17/2024]
 # - Added fixes for AppFilter logic
 # - Added improvements to Ensure-ImportExcelModule for no internet connectivity scenarios.
+#
+# [1/13/2025]
+# - Added support for deletion of files in Archive directory after user-specified days
 # =====================================================================
 
 
@@ -367,6 +370,33 @@ function Archive-File {
     }
 }
 
+function Remove-OldFiles {
+    param (
+        [string]$Directory,
+        [string]$DaysToKeepFiles,
+        [string]$AppLogFilePath
+    )
+
+    try{
+        $cutoffDate = (Get-Date).Date.AddDays(-$DaysToKeepFiles)
+
+        $filesToDelete = Get-ChildItem -Path $Directory -File | Where-Object { $_.LastWriteTime -lt $cutoffDate }
+        $filesToDeleteCount = $filesToDelete.Count
+
+        if ($filesToDeleteCount -gt 0) {
+            Write-Log -logDetails "Found $filesToDeleteCount files older than $daysToKeepFiles days in $Directory." -logFilePath $AppLogFilePath -logType "INFO"
+
+            foreach ($file in $filesToDelete) {
+                Write-Log -logDetails "Deleting file: $($file.FullName)" -logFilePath $AppLogFilePath -logType "INFO"
+                Remove-Item -Path $file.FullName -Force
+            }
+        }
+    }
+    catch {
+        Write-Log -logDetails "File cleanup error: $($_.Exception.Message)" -logFilePath $AppLogFilePath -logType "ERROR"
+    }
+}
+
 # ------------------------
 # 8. Main Script Execution
 # ------------------------
@@ -380,6 +410,8 @@ function Process-FilesInAppFolder {
     )
 
     $tenant = $SettingsObject.tenant
+    $enableFileDeletion = $SettingsObject.enableFileDeletion
+    $daysToKeepFiles = $SettingsObject.DaysToKeepFiles
     $clientURL = "https://$tenant.api.identitynow.com"
     $sourceID = $AppConfig.sourceID
     $isMonarch = $AppConfig.isMonarch
@@ -540,6 +572,13 @@ function Process-FilesInAppFolder {
 
     # Archive processed file
     Archive-File -file $processedFile -archivePath $archivePath -AppLogFilePath $AppLogFilePath
+
+    # File cleanup process for files older than $daysToKeepFiles
+    if ($enableFileDeletion) {
+        Remove-OldFiles -Directory $archivePath -DaysToKeepFiles $daysToKeepFiles -AppLogFilePath $AppLogFilePath
+    } else {
+        Write-Log -logDetails "File Deletion turned off. Cleanup not completed." -logFilePath $AppLogFilePath -logType "INFO"
+    }
 }
 
 # Ensure ImportExcel module is available
