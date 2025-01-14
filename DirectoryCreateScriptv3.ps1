@@ -216,7 +216,7 @@ function Create-DefaultSettings {
         tenant             = "tenant"
         isDebug            = $true  # Default to true for debugging
         AppFilter          = ""
-        enableFileDeletion = false
+        enableFileDeletion = $false
         DaysToKeepFiles    = 30
     }
 
