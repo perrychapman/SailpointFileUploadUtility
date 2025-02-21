@@ -25,6 +25,10 @@
 #
 # [1/13/2025]
 # - Added support for deletion of files in Archive directory after user-specified days
+#
+# [2/21/2025]
+# - Added conversion from xls to xlsx
+# - Added sheetNumber selection for App Config
 # =====================================================================
 
 
@@ -433,6 +437,7 @@ function Process-FilesInAppFolder {
     $adminColumnValue = $AppConfig.adminColumnValue
     $booleanColumns = if ($AppConfig.booleanColumnList -ne $null) {$AppConfig.booleanColumnList.Split(",").Trim() } else { @() }
     $booleanValue = $AppConfig.booleanColumnValue
+    $sheetNumber = $AppConfig.sheetNumber
 
     $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
 
@@ -455,6 +460,18 @@ function Process-FilesInAppFolder {
     } else {
         $recentFile = $files[0]
         Write-Log -logDetails "Processing file: $($recentFile.Name)" -logFilePath $AppLogFilePath -logType 'INFO'
+    }
+
+    # Convert xls to xlsx and replace
+    if($recentFile.Extension -eq '.xls') {
+        $xlsFile = $recentFile
+        $xlsxFile = $xlsFile -replace '\.xls$', '.xlsx'
+
+        ConvertTo-ExcelXlsx -Path $xlsFile -OutputDirectory (Split-Path $xlsxFile) -Force
+
+        Remove-Item -Path $xlsFile
+
+        $recentFile = $xlsxFile
     }
 
     $file = $recentFile
@@ -484,8 +501,25 @@ function Process-FilesInAppFolder {
         continue
     }
 
+    # Check and validate sheetNumber to be processed
+    $worksheets = (Get-ExcelSheetInfo -Path $file.FullName).Name
+
+    if ($AppConfig.sheetNumber -ne $null) {
+        $sheetIndex = $sheetNumber - 1
+
+        if ($sheetNumber -le $worksheets.Count -and $sheetNumber -ge 1) {
+        $selectedWorksheet = $worksheets[$sheetIndex]
+
+        Write-Log -logDetails "Selected worksheet: '$selectedWorksheet', Sheet Number: $sheetNumber" -logFilePath $AppLogFilePath -logType 'INFO'
+        } else {
+        Write-Log -logDetails "ERROR: sheetNumber config value '$sheetNumber' is out of bounds. Max number is $($worksheets.Count)." -logFilePath $AppLogFilePath -logType 'ERROR'
+        }
+    } else {
+        $selectedWorksheet = $worksheets[0]
+    }
+
     # Import and process the data
-    $users = if (($fileExtension -eq ".csv") -or ($fileExtension -eq ".txt")) { Import-Csv -Path $file.FullName } else { Import-Excel -Path $file.FullName -StartRow $headerRow }
+    $users = if (($fileExtension -eq ".csv") -or ($fileExtension -eq ".txt")) { Import-Csv -Path $file.FullName } else { Import-Excel -Path $file.FullName -Worksheet $selectedWorksheet -StartRow $headerRow }
 
     if(!$schema){
         $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -trimLeftColumns $trimLeftColumns -trimRightColumns $trimRightColumns -dropColumns $dropColumns -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -AppLogFilePath $AppLogFilePath
