@@ -51,22 +51,26 @@ function Run-Script {
     }
 
     # Set headers for API request
-    $headers = @{ Authorization = "Bearer $accessToken" }
+    $headers = @{ 
+        Authorization = "Bearer $accessToken"
+        Accept = "application/json"
+    }
 
     #Fetch sources from the API
     try {
         $rawSources = Invoke-RestMethod -Uri "https://$tenant.api.identitynow.com/beta/sources" -Method Get -Headers $headers -ContentType "application/json;charset=utf-8"
         $rawJsonPath = ".\raw_api_response.json"
-        $rawSources | Out-File -FilePath $rawJsonPath -Encoding UTF8
+        $jsonResponse = $rawSources | ConvertTo-Json -Depth 10
+        $jsonResponse | Out-File -FilePath $rawJsonPath -Encoding UTF8
         Write-Log "Raw API response saved."
 
-        $parsedSources = $rawSources | ConvertFrom-Json -AsHashtable
+        $parsedSources = @($rawSources)
 
         $sourcesList = @()
 
         # Extract relevant fields
         foreach ($source in $parsedSources) {
-            if ($source -is [hashtable]) {
+            if ($null -ne $source -and $source.PSObject.Properties["id"]) {
                 $sourceType = $source.connectorName
                 $sourceID = $source.id
                 $sourceName = $source.name -replace '/', '-'
@@ -82,6 +86,8 @@ function Run-Script {
             Write-Log "No valid sources found."
             return
         }
+
+        Write-Log "Successfully retrieved $($sourcesList.Count) sources."
 
         # Check if AppList.csv already exists, load existing entries
         $existingSourcesList = @()
@@ -216,7 +222,7 @@ function Create-DefaultSettings {
         tenant             = "tenant"
         isDebug            = $true  # Default to true for debugging
         AppFilter          = ""
-        enableFileDeletion = $false
+        enableFileDeletion = false
         DaysToKeepFiles    = 30
     }
 
