@@ -27,7 +27,7 @@
 # - Added support for deletion of files in Archive directory after user-specified days
 #
 # [2/21/2025]
-# - Added conversion from xls to xlsx
+# - Added functionality for conversion from xls to xlsx
 # - Added sheetNumber selection for App Config
 # =====================================================================
 
