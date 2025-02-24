@@ -134,7 +134,94 @@ function Write-Log {
 }
 
 # ------------------------
-# 4. Define Trimming, Dropping, and Merging Function
+# 4. Import Pre-Processed Data
+# ------------------------
+function Get-FileData {
+    param (
+        [string]$filePath,   # Full path to the input file
+        [int]$sheetNumber = 1, # Sheet number to read (defaults to the first sheet)
+        [int]$headerRow = 1,  # Row number where the header starts (default: 1)
+        [string]$AppLogFilePath # Log file path for logging
+    )
+
+    # Ensure the file exists before proceeding
+    if (-not (Test-Path -Path $filePath)) {
+        Write-Log -logDetails "ERROR: File not found: $filePath" -logFilePath $AppLogFilePath -logType 'ERROR'
+        return @()  # Return an empty array if the file doesn't exist
+    }
+
+    # Determine file extension
+    $fileExtension = [System.IO.Path]::GetExtension($filePath).ToLower()
+
+    try {
+        if ($fileExtension -match '\.csv|\.txt') {
+            # Import CSV/TXT file
+            $data = Import-Csv -Path $filePath
+            Write-Log -logDetails "Successfully imported CSV/TXT file: $filePath" -logFilePath $AppLogFilePath -logType 'INFO'
+        } elseif ($fileExtension -match '\.xlsx?$') {
+            # Retrieve available worksheets, ensuring it is an array
+            $worksheets = @(Get-ExcelSheetInfo -Path $filePath)
+
+            # Ensure valid worksheet names are present
+            if ($worksheets.Count -gt 0 -and $worksheets[0].PSObject.Properties.Name -contains "Name") {
+                $worksheetNames = @($worksheets | Select-Object -ExpandProperty Name)  # **Ensure array**
+                Write-Log -logDetails "INFO: Retrieved worksheets from file: $filePath -> $($worksheetNames -join ', ')" -logFilePath $AppLogFilePath -logType 'INFO'
+            } else {
+                Write-Log -logDetails "ERROR: No valid worksheets found in file $filePath. Skipping processing." -logFilePath $AppLogFilePath -logType 'ERROR'
+                return @()
+            }
+
+            # Validate sheetNumber, default to first sheet if invalid
+            if ($sheetNumber -lt 1 -or $sheetNumber -gt $worksheetNames.Count) {
+                Write-Log -logDetails "WARNING: sheetNumber '$sheetNumber' is out of bounds. Defaulting to first sheet." -logFilePath $AppLogFilePath -logType 'WARNING'
+                $sheetNumber = 1
+            }
+
+            # Ensure worksheetNames is an array before accessing it
+            if ($worksheetNames -is [array] -and $worksheetNames.Count -gt 0) {
+                $selectedWorksheet = $worksheetNames[$sheetNumber - 1]
+            } else {
+                Write-Log -logDetails "ERROR: Invalid worksheet selection for file: $filePath. Defaulting to first sheet." -logFilePath $AppLogFilePath -logType 'ERROR'
+                $selectedWorksheet = $worksheetNames[0]
+            }
+
+            Write-Log -logDetails "INFO: Selected worksheet '$selectedWorksheet' for import." -logFilePath $AppLogFilePath -logType 'INFO'
+
+            # Ensure the selected worksheet is not null before importing
+            if ([string]::IsNullOrEmpty($selectedWorksheet)) {
+                Write-Log -logDetails "ERROR: Selected worksheet is NULL. Cannot import Excel file." -logFilePath $AppLogFilePath -logType 'ERROR'
+                return @()
+            }
+
+            # Try importing the sheet with error handling
+            try {
+                $data = Import-Excel -Path $filePath -WorksheetName $selectedWorksheet -StartRow $headerRow
+                Write-Log -logDetails "Successfully imported Excel file: $filePath | Worksheet: $selectedWorksheet" -logFilePath $AppLogFilePath -logType 'INFO'
+            } catch {
+                Write-Log -logDetails "ERROR: Import-Excel failed for file $filePath, worksheet: $selectedWorksheet. Error: $_" -logFilePath $AppLogFilePath -logType 'ERROR'
+                return @()
+            }
+        } else {
+            Write-Log -logDetails "ERROR: Unsupported file type: $fileExtension" -logFilePath $AppLogFilePath -logType 'ERROR'
+            return @()
+        }
+
+        # Check if data is empty after import
+        if (-not $data -or $data.Count -eq 0) {
+            Write-Log -logDetails "WARNING: No data found in file after import: $filePath" -logFilePath $AppLogFilePath -logType 'WARNING'
+            return @()
+        }
+
+        return $data
+    }
+    catch {
+        Write-Log -logDetails "ERROR: Failed to import file $filePath. Error: $_" -logFilePath $AppLogFilePath -logType 'ERROR'
+        return @()
+    }
+}
+
+# ------------------------
+# 5. Define Trimming, Dropping, and Merging Function
 # ------------------------
 
 function Trim-Data {
@@ -235,7 +322,7 @@ function Trim-Data {
 }
 
 # ------------------------
-# 5. Process Imported Data
+# 6. Process Imported Data
 # ------------------------
 
 function Process-ImportedData {
@@ -320,7 +407,7 @@ function Process-ImportedData {
 }
 
 # ------------------------
-# 6. Upload to SailPoint
+# 7. Upload to SailPoint
 # ------------------------
 
 function Upload-ToSailPoint {
@@ -355,7 +442,7 @@ function Upload-ToSailPoint {
 }
 
 # ------------------------
-# 7. File Archival
+# 8. File Archival
 # ------------------------
 
 function Archive-File {
@@ -402,7 +489,7 @@ function Remove-OldFiles {
 }
 
 # ------------------------
-# 8. Main Script Execution
+# 9. Main Script Execution
 # ------------------------
 
 function Process-FilesInAppFolder {
@@ -437,7 +524,7 @@ function Process-FilesInAppFolder {
     $adminColumnValue = $AppConfig.adminColumnValue
     $booleanColumns = if ($AppConfig.booleanColumnList -ne $null) {$AppConfig.booleanColumnList.Split(",").Trim() } else { @() }
     $booleanValue = $AppConfig.booleanColumnValue
-    $sheetNumber = $AppConfig.sheetNumber
+    $sheetNumber = if ($AppConfig.PSObject.Properties.Name -contains 'sheetNumber') { $AppConfig.sheetNumber } else { 1 }
 
     $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
 
@@ -501,25 +588,9 @@ function Process-FilesInAppFolder {
         continue
     }
 
-    # Check and validate sheetNumber to be processed
-    $worksheets = (Get-ExcelSheetInfo -Path $file.FullName).Name
-
-    if ($AppConfig.sheetNumber -ne $null) {
-        $sheetIndex = $sheetNumber - 1
-
-        if ($sheetNumber -le $worksheets.Count -and $sheetNumber -ge 1) {
-        $selectedWorksheet = $worksheets[$sheetIndex]
-
-        Write-Log -logDetails "Selected worksheet: '$selectedWorksheet', Sheet Number: $sheetNumber" -logFilePath $AppLogFilePath -logType 'INFO'
-        } else {
-        Write-Log -logDetails "ERROR: sheetNumber config value '$sheetNumber' is out of bounds. Max number is $($worksheets.Count)." -logFilePath $AppLogFilePath -logType 'ERROR'
-        }
-    } else {
-        $selectedWorksheet = $worksheets[0]
-    }
-
+    $users = @()
     # Import and process the data
-    $users = if (($fileExtension -eq ".csv") -or ($fileExtension -eq ".txt")) { Import-Csv -Path $file.FullName } else { Import-Excel -Path $file.FullName -Worksheet $selectedWorksheet -StartRow $headerRow }
+    $users = Get-FileData -filePath $file.FullName -sheetNumber $sheetNumber -headerRow $headerRow -AppLogFilePath $AppLogFilePath
 
     if(!$schema){
         $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -trimLeftColumns $trimLeftColumns -trimRightColumns $trimRightColumns -dropColumns $dropColumns -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -AppLogFilePath $AppLogFilePath
