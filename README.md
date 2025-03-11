@@ -200,27 +200,83 @@ Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 ```
 
 ### Corresponding `config.json`
+## Sample Config.json File
+
 ```json
 {
-    "sourceID": "78910",
+    "sourceID": "550e8400-e29b-41d4-a716-446655440000",
     "disableField": "Status",
     "disableValue": ["Inactive"],
-    "groupTypes": "Group",
+    "groupTypes": "",
     "groupDelimiter": ",",
     "isUpload": true,
-    "headerRow": 1,
+    "headerRow": 2,
+    "trimTopRows": 2,
+    "trimBottomRows": 1,
+    "trimLeftColumns": 1,
+    "trimRightColumns": 0,
     "dropColumns": "Email",
+    "columnsToMerge": "FirstName,LastName",
+    "mergedColumnName": "FullName",
     "adminColumnName": "Role",
-    "adminColumnValue": "Admin"
+    "adminColumnValue": "Admin",
+    "sheetNumber": 1
 }
 ```
 
-### Expected Output File
+---
+
+## Configuration Parameters
+
+| Parameter           | Description | Valid Inputs | Example Values |
+|---------------------|-------------|-------------|---------------|
+| **`sourceID`** | **UUID value pulled from the SailPoint connection settings URL.** This uniquely identifies the app's integration source. | UUID (String) | `"550e8400-e29b-41d4-a716-446655440000"` |
+| **`disableField`** | Column used to determine if a user should be disabled. | Column Name from CSV/Excel | `"Status"`, `"EmployeeState"` |
+| **`disableValue`** | Values in `disableField` that indicate an inactive user. | Array of Strings | `["Inactive", "Terminated"]` |
+| **`groupTypes`** | Column(s) that contain entitlement or group data. **If left blank, defaults to `Role` column.** | Column Name(s) or `""` | `"Group"`, `"Department"`, `""` |
+| **`groupDelimiter`** | Separator used in `groupTypes` if multiple values exist. | String | `","`, `"|"` |
+| **`isUpload`** | Whether to upload processed data to SailPoint. | Boolean | `true`, `false` |
+| **`headerRow`** | The row where column headers start. | Integer (`>= 1`) | `1`, `2`, `3` |
+| **`trimTopRows`** | Number of rows **after header row** to remove. | Integer (`>= 0`) | `0`, `1`, `5` |
+| **`trimBottomRows`** | Number of rows at the bottom to remove. | Integer (`>= 0`) | `0`, `2`, `10` |
+| **`trimLeftColumns`** | Number of leftmost columns to remove. | Integer (`>= 0`) | `0`, `1`, `3` |
+| **`trimRightColumns`** | Number of rightmost columns to remove. | Integer (`>= 0`) | `0`, `1`, `2` |
+| **`dropColumns`** | List of columns to remove from processing. | Comma-separated column names | `"Email,PhoneNumber"` |
+| **`columnsToMerge`** | Columns that should be merged into a new column. | Comma-separated column names | `"FirstName,LastName"` |
+| **`mergedColumnName`** | Name of the new merged column. | String | `"FullName"` |
+| **`adminColumnName`** | Column used to determine admin users. | Column Name from CSV/Excel | `"Role"` |
+| **`adminColumnValue`** | Value in `adminColumnName` that indicates an admin user. | String | `"Admin"`, `"SuperUser"` |
+| **`sheetNumber`** | Defines which worksheet to process in Excel files (1-based index). | Integer (`>= 1`) | `1`, `2`, `3` |
+
+---
+
+## Behavioral Logic & Script Defaults
+
+✅ **If `groupTypes` is left blank (`""`), the script will create a `Role` column and assign `"User"` as the default value.**  
+✅ **If `adminColumnName` is provided, any user with `adminColumnValue` in that column will have `"Admin"` as their Role.**  
+✅ **Example:**
+   - If **`groupTypes`** is `""` and `adminColumnName: "Role"` with `adminColumnValue: "Admin"`,  
+     - Users with `"Admin"` in the `"Role"` column will be assigned `"Admin"`,  
+     - All others will be assigned `"User"`.  
+
+---
+
+## Example Input & Expected Output
+
+### **Input File (`users.csv`)**
+```csv
+FirstName,LastName,Email,Role,Status,Group
+John,Doe,john.doe@example.com,User,Active,HR
+Jane,Smith,jane.smith@example.com,Admin,Active,IT
+Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 ```
-FirstName,LastName,Role,IIQDisabled,Group
-John,Doe,User,false,HR
-Jane,Smith,Admin,false,IT
-Bob,Brown,User,true,Finance
+
+### **Expected Processed Output (`processed.csv`)**
+```csv
+FirstName,LastName,FullName,IIQDisabled,Role,Group
+John,Doe,John Doe,false,User,HR
+Jane,Smith,Jane Smith,false,Admin,IT
+Bob,Brown,Bob Brown,true,User,Finance
 ```
 
 ---
