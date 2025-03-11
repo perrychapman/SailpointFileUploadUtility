@@ -73,19 +73,64 @@ This document provides detailed instructions for setting up, running, and troubl
 ## File Processing Workflow
 
 1. **Ensure ImportExcel Module is Available**
+   - The script checks if the `ImportExcel` module is installed.
+   - If not installed, it attempts to install it. If installation fails, a warning is logged.
+
 2. **Load Master Settings from `settings.json`**
+   - Reads global settings from `settings.json`.
+   - Validates that required parameters like `AppFolder`, `ClientID`, `ClientSecret`, and `tenant` are available.
+   - If required parameters are missing, the script logs an error and exits.
+
 3. **Fetch App Folders to Process**
+   - Identifies all subdirectories within the designated `AppFolder`.
+   - If an `AppFilter` is defined, only folders matching the filter will be processed.
+   - If no valid app folders are found, a warning is logged, and processing stops.
+
 4. **For Each App Folder:**
-   - Load `config.json`.
-   - Identify the latest file to process (CSV, TXT, XLS, XLSX).
-   - Convert XLS to XLSX if applicable.
-   - Import and clean up file data.
-   - Process roles and entitlements.
-   - Export processed data.
-   - Upload to SailPoint if `isUpload` is `true`.
-   - Archive original and processed files.
-   - Clean up old archived files.
+   - **Load `config.json`**
+     - Reads application-specific settings for file processing and upload behavior.
+     - Logs an error and skips the folder if `config.json` is missing or invalid.
+
+   - **Identify the Latest File to Process**
+     - Finds the most recently modified CSV, TXT, XLS, or XLSX file.
+     - If multiple files are found, only the most recent one is processed.
+     - If no valid file is found, logs an error and skips processing.
+
+   - **Convert XLS to XLSX (if applicable)**
+     - If an `.xls` file is found, it is converted to `.xlsx`.
+     - The original `.xls` file is removed after conversion.
+
+   - **Import and Clean Up File Data**
+     - Reads file data based on format (CSV, TXT, or Excel).
+     - Removes extra rows and columns as per `config.json` settings (`trimTopRows`, `trimBottomRows`, etc.).
+     - Merges specified columns if `columnsToMerge` is defined.
+     - Drops unnecessary columns as per `dropColumns`.
+     - If Boolean processing is enabled, it converts entitlement fields into a `Role` column.
+
+   - **Process Roles and Entitlements**
+     - Assigns roles (`Admin`, `User`, etc.) based on `adminColumnName` and `adminColumnValue`.
+     - Determines disabled users based on `disableField` and `disableValue`.
+     - If `groupTypes` is defined, users are assigned to multiple entitlements.
+
+   - **Export Processed Data**
+     - Saves the processed file in CSV format.
+     - Logs an error if the file cannot be created.
+
+   - **Upload to SailPoint (if `isUpload` is `true`)**
+     - Calls the `Upload-ToSailPoint` function to upload the processed file.
+     - Logs success or failure messages related to the upload.
+
+   - **Archive Original and Processed Files**
+     - Moves both original and processed files to the `Archive` folder.
+     - Files are named as `[sourceID]_upload_YYYYMMDD.csv` for tracking.
+
+   - **Clean Up Old Archived Files**
+     - If `enableFileDeletion` is `true`, removes archived files older than `DaysToKeepFiles`.
+     - Logs deleted files and any errors that occur.
+
 5. **Write Execution Logs**
+   - Logs script execution details, errors, and warnings to the `ExecutionLog` directory.
+   - Summarizes the number of apps processed, skipped, and any errors encountered.
 
 ---
 
