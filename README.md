@@ -1,10 +1,12 @@
-# File Upload Script - ReadMe
+# File Upload Script - README
 
-This document provides detailed instructions for setting up, running, and troubleshooting the `FileUploadScript.ps1`. It covers system requirements, setup steps, configuration details, scheduling with Windows Task Scheduler, and troubleshooting guidance.
+This document provides detailed instructions for setting up, running, and troubleshooting the `FileUploadScript.ps1`.  
+It covers system requirements, setup steps, configuration details, scheduling with Windows Task Scheduler, file processing workflow, example configurations, and troubleshooting guidance.
 
 ---
 
-## Table of Contents
+## 📖 Table of Contents
+
 1. [System Requirements](#system-requirements)
 2. [Setup Instructions](#setup-instructions)
 3. [Configuration Details](#configuration-details)
@@ -15,6 +17,8 @@ This document provides detailed instructions for setting up, running, and troubl
 8. [Sample Directory Structure](#sample-directory-structure)
 9. [Logging and Troubleshooting](#logging-and-troubleshooting)
 10. [Example User List and Configuration](#example-user-list-and-configuration)
+11. [Behavioral Logic & Script Defaults](#behavioral-logic--script-defaults)
+12. [Changelog](#changelog)
 
 ---
 
@@ -27,8 +31,8 @@ This document provides detailed instructions for setting up, running, and troubl
 ### Software
 - PowerShell 7+
 - Java Runtime Environment (JRE) version 11 or later
-- [ImportExcel PowerShell Module](https://github.com/dfinke/ImportExcel) (Automatically installed by the script if not already installed)
-- Internet connection required for API calls to SailPoint
+- [ImportExcel PowerShell Module](https://github.com/dfinke/ImportExcel) (automatically installed by the script if not already installed)
+- Internet connection (required for API calls and ImportExcel installation)
 - Administrator permissions required to run the script
 
 ### Required Files
@@ -41,113 +45,129 @@ This document provides detailed instructions for setting up, running, and troubl
 ## Setup Instructions
 
 1. **Download the Required Files**
-   - Ensure `FileUploadScript.ps1`, `settings.json`, and `config.json` are available in the designated processing directory.
-   - If these files are missing, manually create `settings.json` and `config.json` based on the provided examples.
+   - Ensure `FileUploadScript.ps1`, `settings.json`, and per-app `config.json` are present in their respective directories.
+   - If these files are missing, manually create `settings.json` and `config.json` using the examples below.
 
 2. **Install Required Software**
-   - Ensure PowerShell 7+ and Java JRE 11+ are installed.
-   - Run the following command in PowerShell to install the ImportExcel module:
-     ```powershell
-     Install-Module ImportExcel -Scope CurrentUser
-     ```
+   - Install PowerShell 7+ and Java JRE 11+.
+   - Run this command in PowerShell to install the ImportExcel module (optional if no internet — script attempts it automatically):
+```powershell
+Install-Module ImportExcel -Scope CurrentUser
+```
 
 3. **Configure `settings.json`**
-   - Modify `settings.json` to match your processing environment.
-   - Example `settings.json`:
-     ```json
-     {
-       "ParentDirectory": "C:\\DataProcessing",
-       "AppFolder": "C:\\DataProcessing\\Apps",
-       "FileUploadUtility": "C:\\Tools\\sailpoint-file-upload.jar",
-       "ClientID": "YourClientID",
-       "ClientSecret": "YourClientSecret",
-       "tenant": "YourTenantURL",
-       "enableFileDeletion": true,
-       "DaysToKeepFiles": 30,
-       "AppFilter": ""
-     }
-     ```
+   - Edit `settings.json` to match your environment:
+```json
+{
+  "ParentDirectory": "C:\\DataProcessing",
+  "AppFolder": "C:\\DataProcessing\\Apps",
+  "FileUploadUtility": "C:\\Tools\\sailpoint-file-upload.jar",
+  "ClientID": "YourClientID",
+  "ClientSecret": "YourClientSecret",
+  "tenant": "YourTenantURL",
+  "enableFileDeletion": true,
+  "DaysToKeepFiles": 30,
+  "AppFilter": "",
+  "ExecutionLogDir": "C:\\DataProcessing\\ExecutionLog",
+  "isDebug": false
+}
+```
+
+---
+
+## Running the Script
+
+Run manually in PowerShell:
+```powershell
+pwsh.exe .\FileUploadScript.ps1
+```
+
+Logs and processed files will appear in the configured folders.
+
+---
+
+## Task Scheduler Setup
+
+1. Open **Task Scheduler** → Create Basic Task.
+2. Select a trigger (daily, weekly, etc.).
+3. Action → Start a Program → `pwsh.exe`
+4. Add arguments:
+```
+-File "C:\Path\To\FileUploadScript.ps1"
+```
+5. Save and test.
 
 ---
 
 ## File Processing Workflow
 
 1. **Ensure ImportExcel Module is Available**
-   - The script checks if the `ImportExcel` module is installed.
-   - If not installed, it attempts to install it. If installation fails, a warning is logged.
+   - Checks if `ImportExcel` is installed.
+   - If missing, attempts install; if failed, logs warning and continues if already pre-installed.
 
-2. **Load Master Settings from `settings.json`**
-   - Reads global settings from `settings.json`.
-   - Validates that required parameters like `AppFolder`, `ClientID`, `ClientSecret`, and `tenant` are available.
-   - If required parameters are missing, the script logs an error and exits.
+2. **Load Master Settings**
+   - Reads `settings.json`.
+   - Validates required parameters like `AppFolder`, `ClientID`, `ClientSecret`, and `tenant`.
 
-3. **Fetch App Folders to Process**
-   - Identifies all subdirectories within the designated `AppFolder`.
-   - If an `AppFilter` is defined, only folders matching the filter will be processed.
-   - If no valid app folders are found, a warning is logged, and processing stops.
+3. **Identify App Folders**
+   - Scans `AppFolder` for subdirectories.
+   - If `AppFilter` is set, only matching folders are processed.
 
 4. **For Each App Folder:**
    - **Load `config.json`**
-     - Reads application-specific settings for file processing and upload behavior.
-     - Logs an error and skips the folder if `config.json` is missing or invalid.
+     - Reads app-specific settings.
+     - If missing/invalid, logs error and skips.
 
-   - **Identify the Latest File to Process**
-     - Finds the most recently modified CSV, TXT, XLS, or XLSX file.
-     - If multiple files are found, only the most recent one is processed.
-     - If no valid file is found, logs an error and skips processing.
+   - **Find Latest File to Process**
+     - Looks for the most recent `.csv`, `.txt`, `.xls`, or `.xlsx`.
+     - If `.xls`, converts to `.xlsx` (with `.xls` removed).
 
-   - **Convert XLS to XLSX (if applicable)**
-     - If an `.xls` file is found, it is converted to `.xlsx`.
-     - The original `.xls` file is removed after conversion.
+   - **Import & Clean Data**
+     - Reads data starting at `headerRow`, from specified `sheetNumber` if Excel.
+     - Trims `trimTopRows`, `trimBottomRows`, `trimLeftColumns`, `trimRightColumns`.
+     - Merges `columnsToMerge` into `mergedColumnName`.
+     - Drops columns listed in `dropColumns`.
 
-   - **Import and Clean Up File Data**
-     - Reads file data based on format (CSV, TXT, or Excel).
-     - Removes extra rows and columns as per `config.json` settings (`trimTopRows`, `trimBottomRows`, etc.).
-     - Merges specified columns if `columnsToMerge` is defined.
-     - Drops unnecessary columns as per `dropColumns`.
-     - If Boolean processing is enabled, it converts entitlement fields into a `Role` column.
+   - **Process Roles & Entitlements**
+     - Assigns roles (`Admin`, `User`) based on `adminColumnName` and `adminColumnValue`.
+     - Marks users as disabled if `disableField` matches `disableValue`.
+     - If `groupTypes` is set, assigns entitlements based on those columns.
+     - If `booleanColumnList` is set, combines columns with `booleanColumnValue` into `Role`.
 
-   - **Process Roles and Entitlements**
-     - Assigns roles (`Admin`, `User`, etc.) based on `adminColumnName` and `adminColumnValue`.
-     - Determines disabled users based on `disableField` and `disableValue`.
-     - If `groupTypes` is defined, users are assigned to multiple entitlements.
+   - **Export Data**
+     - Saves processed intermediate file.
+     - Saves upload-ready file as `[sourceID]_upload_YYYYMMDD.csv`.
 
-   - **Export Processed Data**
-     - Saves the processed file in CSV format.
-     - Logs an error if the file cannot be created.
+   - **Upload to SailPoint**
+     - If `isUpload=true`, uploads via SailPoint File Upload Utility.
+     - Logs upload status.
 
-   - **Upload to SailPoint (if `isUpload` is `true`)**
-     - Calls the `Upload-ToSailPoint` function to upload the processed file.
-     - Logs success or failure messages related to the upload.
-
-   - **Archive Original and Processed Files**
-     - Moves both original and processed files to the `Archive` folder.
-     - Files are named as `[sourceID]_upload_YYYYMMDD.csv` for tracking.
-
-   - **Clean Up Old Archived Files**
-     - If `enableFileDeletion` is `true`, removes archived files older than `DaysToKeepFiles`.
-     - Logs deleted files and any errors that occur.
+   - **Archive & Cleanup**
+     - Moves original & processed files to `Archive` folder.
+     - Deletes original file if upload successful or `isDebug=true`.
+     - Deletes archived & log files older than `DaysToKeepFiles` if `enableFileDeletion=true`.
 
 5. **Write Execution Logs**
-   - Logs script execution details, errors, and warnings to the `ExecutionLog` directory.
-   - Summarizes the number of apps processed, skipped, and any errors encountered.
+   - Logs script execution summary including number of apps processed, skipped, and errors.
 
 ---
 
 ## Script Functions Overview
 
 | Function Name | Purpose |
-|--------------|---------|
-| `Ensure-ImportExcelModule` | Checks and installs the ImportExcel module if missing. |
-| `Load-MasterSettings` | Reads global settings from `settings.json`. |
-| `Write-Log` | Logs events, errors, and warnings to execution logs. |
-| `Get-FileData` | Reads and processes input files based on config settings. |
-| `Trim-Data` | Cleans, merges, and trims data as per `config.json`. |
-| `Process-ImportedData` | Assigns roles, entitlements, and disables users based on settings. |
-| `Upload-ToSailPoint` | Uses the SailPoint File Upload Utility to send processed files. |
-| `Archive-File` | Moves original and processed files to the `Archive` directory. |
-| `Remove-OldFiles` | Deletes archived files older than the specified retention period. |
-| `Process-FilesInAppFolder` | Main function that processes files in each app folder. |
+|---------------|---------|
+| `Ensure-ImportExcelModule` | Ensures ImportExcel is installed |
+| `Load-MasterSettings` | Loads `settings.json` |
+| `Write-Log` | Logs events, warnings, errors |
+| `Get-FileData` | Reads file data (CSV, TXT, XLS/XLSX) |
+| `Trim-Data` | Trims/merges/drops columns |
+| `Process-ImportedData` | Adds roles, disabled flags, entitlements |
+| `Upload-ToSailPoint` | Uploads to SailPoint |
+| `Archive-File` | Moves files to Archive |
+| `Remove-OldFiles` | Deletes old archived files |
+| `Remove-OldLogFiles` | Deletes old log files |
+| `Remove-OriginalFile` | Deletes original file |
+| `Process-FilesInAppFolder` | Main processing for app folder |
 
 ---
 
@@ -155,19 +175,20 @@ This document provides detailed instructions for setting up, running, and troubl
 
 ```
 C:\DataProcessing\
-│-- settings.json
-│-- ExecutionLog\
-│   │-- ExecutionLog_YYYYMMDD.csv
-│-- AppFolder1\
-│   │-- config.json
-│   │-- Log\
-│   │   │-- Log_AppFolder1_YYYYMMDD.csv
-│   │-- input.csv
-│   │-- Archive\
-│   │   │-- Processed_YYYYMMDD.csv
-│   │   │-- Original_YYYYMMDD.csv
-│   │   │-- [sourceID]_upload_YYYYMMDD.csv
-│-- FileUploadScript.ps1
+├── settings.json
+├── ExecutionLog\
+│   └── ExecutionLog_YYYYMMDD.csv
+├── Apps\
+│   ├── App1\
+│   │   ├── config.json
+│   │   ├── Log\
+│   │   │   └── Log_App1_YYYYMMDD.csv
+│   │   ├── input.csv
+│   │   ├── Archive\
+│   │   │   ├── Original_YYYYMMDD.csv
+│   │   │   ├── Processed_YYYYMMDD.csv
+│   │   │   └── [sourceID]_upload_YYYYMMDD.csv
+├── FileUploadScript.ps1
 ```
 
 ---
@@ -176,51 +197,53 @@ C:\DataProcessing\
 
 ### Log File Locations
 - **Execution Log**: `ExecutionLog\ExecutionLog_YYYYMMDD.csv`
-- **App Logs**: `AppFolder\Log\Log_AppName_YYYYMMDD.csv`
+- **App Logs**: `Apps/<AppName>/Log/Log_<AppName>_YYYYMMDD.csv`
 
 ### Common Issues & Solutions
-| Issue                         | Solution |
-|--------------------------------|----------|
-| Missing `ImportExcel` module  | Run `Install-Module ImportExcel -Scope CurrentUser` |
-| Missing Java                  | Ensure Open JDK 11+ is installed and `java` is in `PATH`. |
-| Config or settings JSON error | Validate JSON using an online tool or PowerShell (`ConvertFrom-Json`). |
-| Script exits unexpectedly     | Check log files for error messages. |
-| Files not uploading           | Ensure API credentials are correct and service is accessible. |
+
+| Issue | Solution |
+|-------|----------|
+| Missing ImportExcel | Run `Install-Module ImportExcel -Scope CurrentUser` |
+| Missing Java | Install JDK 11+ and ensure `java` in PATH |
+| Invalid JSON | Validate using online tool or PowerShell `ConvertFrom-Json` |
+| Script exits unexpectedly | Check logs for errors |
+| Upload fails | Verify credentials & service availability |
+| No files found | Ensure files exist in app folder and `AppFilter` is correct |
 
 ---
 
 ## Example User List and Configuration
 
 ### Sample `users.csv`
-```
+```csv
 FirstName,LastName,Email,Role,Status,Group
 John,Doe,john.doe@example.com,User,Active,HR
 Jane,Smith,jane.smith@example.com,Admin,Active,IT
 Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 ```
 
-### Corresponding `config.json`
-## Sample Config.json File
-
+### Sample `config.json`
 ```json
 {
-    "sourceID": "550e8400-e29b-41d4-a716-446655440000",
-    "disableField": "Status",
-    "disableValue": ["Inactive"],
-    "groupTypes": "",
-    "groupDelimiter": ",",
-    "isUpload": true,
-    "headerRow": 2,
-    "trimTopRows": 2,
-    "trimBottomRows": 1,
-    "trimLeftColumns": 1,
-    "trimRightColumns": 0,
-    "dropColumns": "Email",
-    "columnsToMerge": "FirstName,LastName",
-    "mergedColumnName": "FullName",
-    "adminColumnName": "Role",
-    "adminColumnValue": "Admin",
-    "sheetNumber": 1
+  "sourceID": "550e8400-e29b-41d4-a716-446655440000",
+  "disableField": "Status",
+  "disableValue": ["Inactive"],
+  "groupTypes": "",
+  "groupDelimiter": ",",
+  "isUpload": true,
+  "headerRow": 2,
+  "trimTopRows": 2,
+  "trimBottomRows": 1,
+  "trimLeftColumns": 1,
+  "trimRightColumns": 0,
+  "dropColumns": "Email",
+  "columnsToMerge": "FirstName,LastName",
+  "mergedColumnName": "FullName",
+  "adminColumnName": "Role",
+  "adminColumnValue": "Admin",
+  "sheetNumber": 1,
+  "booleanColumnList": "Entitlement1,Entitlement2",
+  "booleanColumnValue": "Y"
 }
 ```
 
@@ -252,34 +275,25 @@ Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 
 ## Behavioral Logic & Script Defaults
 
-✅ **If `groupTypes` is left blank (`""`), the script will create a `Role` column and assign `"User"` as the default value.**  
-✅ **If `adminColumnName` is provided, any user with `adminColumnValue` in that column will have `"Admin"` as their Role.**  
-✅ **Example:**
-   - If **`groupTypes`** is `""` and `adminColumnName: "Role"` with `adminColumnValue: "Admin"`,  
-     - Users with `"Admin"` in the `"Role"` column will be assigned `"Admin"`,  
-     - All others will be assigned `"User"`.  
+✅ If `groupTypes` is blank, assigns `Role = User` by default.  
+✅ Users with `adminColumnName=AdminColumnValue` are assigned `Role = Admin`.  
+✅ `.xls` files are automatically converted to `.xlsx`.  
+✅ Boolean entitlement columns (e.g., Y/N) are converted to `Role` field.  
+✅ If `isDebug=true`, deletes original file even if upload fails.
 
 ---
 
-## Example Input & Expected Output
+## Changelog
 
-### **Input File (`users.csv`)**
-```csv
-FirstName,LastName,Email,Role,Status,Group
-John,Doe,john.doe@example.com,User,Active,HR
-Jane,Smith,jane.smith@example.com,Admin,Active,IT
-Bob,Brown,bob.brown@example.com,User,Inactive,Finance
-```
-
-### **Expected Processed Output (`processed.csv`)**
-```csv
-FirstName,LastName,FullName,IIQDisabled,Role,Group
-John,Doe,John Doe,false,User,HR
-Jane,Smith,Jane Smith,false,Admin,IT
-Bob,Brown,Bob Brown,true,User,Finance
-```
+| Date | Change |
+|------|--------|
+| 11/18/2024 | Added admin role assignment with `adminColumnName` & `adminColumnValue` |
+| 11/21/2024 | Added boolean entitlement column processing |
+| 12/17/2024 | Enhanced AppFilter & offline ImportExcel handling |
+| 1/13/2025 | Added deletion of old archive files |
+| 2/21/2025 | Added `.xls`→`.xlsx` conversion & sheet selection |
+| 7/10/2025 | Added original and log file cleanup logic |
 
 ---
 
-This documentation provides an overview of the script's functionality and structure. For additional help, refer to the log files or test execution manually before automating with Task Scheduler.
-
+For additional help, review the log files and run manually before scheduling.
