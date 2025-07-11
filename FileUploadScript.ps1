@@ -29,6 +29,10 @@
 # [2/21/2025]
 # - Added functionality for conversion from xls to xlsx
 # - Added sheetNumber selection for App Config
+#
+# [7/10/2025]
+# - Added original file deletion handling
+# - Added log file deletion handling
 # =====================================================================
 
 
@@ -384,7 +388,9 @@ function Process-ImportedData {
 
                     foreach ($grp in $splitGroups) {
                         $temp_user.$type = $grp.Trim()
-                        $table += $temp_user.PSObject.Copy()
+                        if ($temp_user.$type){
+                            $table += $temp_user.PSObject.Copy()
+                        }
                     }
                     $temp_user.$type = $null
                 }
@@ -427,16 +433,20 @@ function Upload-ToSailPoint {
 
             if ($output -and $output.Contains("error")) {
                 Write-Log -logDetails "Error during upload for SourceID: $sourceID. Output: $output" -logFilePath $AppLogFilePath -logType 'ERROR'
+                return $false
             } else {
                 Write-Log -logDetails "Upload completed successfully for SourceID: $sourceID." -logFilePath $AppLogFilePath -logType 'INFO'
+                return $true
                 $script:uploadCount++
             }
         }
         catch {
             Write-Log -logDetails "Failed to upload file to SailPoint. Error: $_" -logFilePath $AppLogFilePath -logType 'ERROR'
+            return $false
         }
     } else {
         Write-Log -logDetails "File path for upload file not found. Upload failed." -logFilePath $AppLogFilePath -logType 'ERROR'
+        return $false
         $script:errorCount++
     }
 }
@@ -488,8 +498,67 @@ function Remove-OldFiles {
     }
 }
 
+function Remove-OriginalFile {
+    param (
+        [string]$filePath,
+        [string]$AppLogFilePath
+        )
+
+    try {
+        if (Test-Path -Path $filePath -PathType Leaf) {
+            Remove-Item -Path $filePath -Force
+            Write-Log -logDetails "Deleted original file from app folder: $filePath" -logFilePath $AppLogFilePath -logType "INFO"
+        } else {
+            Write-Log -logDetails "Original file not found in app folder for deletion: $filePath" -logFilePath $AppLogFilePath -logType "ERROR"
+        }
+    }
+    catch {
+        Write-Log -logDetails "Failed to delete the original file from the app folder. Error: $_" -logFilePath $AppLogFilePath -logType "ERROR"
+    }
+}
+
+function Remove-OldLogFiles {
+    param (
+        [string]$LogDirectory,
+        [int]$DaysToKeep,
+        [string]$LogFilePath
+    )
+
+    try {
+        $cutoffDate = (Get-Date).AddDays(-$DaysToKeep)
+
+        Write-Host $cutoffDate
+
+        if (-not (Test-Path -Path $LogDirectory -PathType Container)) {
+            Write-Log -logDetails "Log directory does not exist: $LogDirectory" -logFilePath $LogFilePath -logType "ERROR"
+            return
+        }
+
+        $oldLogs = Get-ChildItem -Path $LogDirectory -File `
+            | Where-Object { $_.LastWriteTime -lt $cutoffDate }
+
+        if ($oldLogs.Count -eq 0) {
+            Write-Log -logDetails "No log files older than $cutoffDate ($DaysToKeep days) found in $LogDirectory. Skipping log cleanup." -logFilePath $LogFilePath -logType "WARNING"
+            return
+        }
+
+        foreach ($log in $oldLogs) {
+            try {
+                Remove-Item -Path $log.FullName -Force
+                Write-Log -logDetails "Deleted old log file: $($log.FullName)" -logFilePath $LogFilePath -logType "INFO"
+            }
+            catch {
+                Write-Log -logDetails "Failed to delete log file: $($log.FullName)). Error: $($_.Exception.Message)" -logFilePath $LogFilePath -logType "ERROR"
+            }
+        }
+    }
+    catch {
+        Write-Log -logDetails "Error during log file cleanup in $LogDirectory. Error: $($_.Exception.Message)" -logFilePath $LogFilePath -logType "ERROR"
+    }
+}
+
 # ------------------------
-# 9. Main Script Execution
+# 9. File Processing
 # ------------------------
 
 function Process-FilesInAppFolder {
@@ -501,6 +570,7 @@ function Process-FilesInAppFolder {
     )
 
     $tenant = $SettingsObject.tenant
+    $isDebug = $SettingsObject.isDebug
     $enableFileDeletion = $SettingsObject.enableFileDeletion
     $daysToKeepFiles = $SettingsObject.DaysToKeepFiles
     $clientURL = "https://$tenant.api.identitynow.com"
@@ -527,10 +597,12 @@ function Process-FilesInAppFolder {
     $sheetNumber = if ($AppConfig.PSObject.Properties.Name -contains 'sheetNumber') { $AppConfig.sheetNumber } else { 1 }
 
     $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
+    Write-Host $checkPath
 
     Write-Log -logDetails "Checking for CSV and Excel files in $checkPath..." -logFilePath $AppLogFilePath
 
     $files = Get-ChildItem -Path $checkPath -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Extension -match '(?i)\.(csv|xlsx|xls|txt)$' }
+    Write-Host $files
 
     if (-not $files) {
         Write-Log -logDetails "No CSV or Excel files found in $checkPath. Import cancelled." -logFilePath $AppLogFilePath -logType 'ERROR'
@@ -549,16 +621,18 @@ function Process-FilesInAppFolder {
         Write-Log -logDetails "Processing file: $($recentFile.Name)" -logFilePath $AppLogFilePath -logType 'INFO'
     }
 
+
     # Convert xls to xlsx and replace
     if($recentFile.Extension -eq '.xls') {
-        $xlsFile = $recentFile
-        $xlsxFile = $xlsFile -replace '\.xls$', '.xlsx'
+        ConvertTo-ExcelXlsx -Path $recentFile.FullName
 
-        ConvertTo-ExcelXlsx -Path $xlsFile -OutputDirectory (Split-Path $xlsxFile) -Force
+        $files = Get-ChildItem -Path $checkPath -File -Force -ErrorAction SilentlyContinue
 
-        Remove-Item -Path $xlsFile
+        $convertedFile = $files | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-        $recentFile = $xlsxFile
+        Write-Host $convertedFile.Extension
+
+        $recentFile = $convertedFile    
     }
 
     $file = $recentFile
@@ -671,20 +745,52 @@ function Process-FilesInAppFolder {
     }
 
     # Upload to SailPoint
+    $uploadSucceded = $false
+
     if ($isUpload -and $null -ne $sourceID -and $sourceID -ne "") {
-        Upload-ToSailPoint -newFile $newFile -sourceID $sourceID -clientURL $clientURL -fileUploadUtility $SettingsObject.FileUploadUtility -ClientID $SettingsObject.ClientID -ClientSecret $SettingsObject.ClientSecret -AppLogFilePath $AppLogFilePath
+        $uploadSucceeded = Upload-ToSailPoint `
+            -newFile $newFile `
+            -sourceID $sourceID `
+            -clientURL $clientURL `
+            -fileUploadUtility $SettingsObject.FileUploadUtility `
+            -ClientID $SettingsObject.ClientID `
+            -ClientSecret $SettingsObject.ClientSecret `
+            -AppLogFilePath $AppLogFilePath
     }
 
     # Archive processed file
     Archive-File -file $processedFile -archivePath $archivePath -AppLogFilePath $AppLogFilePath
 
-    # File cleanup process for files older than $daysToKeepFiles
-    if ($enableFileDeletion) {
+    # Original file deletion handling based on isDebug and upload to Sailpoint result
+    if ($isDebug) {
+        Remove-OriginalFile -filePath $file.FullName -AppLogFilePath $AppLogFilePath
+    }
+    elseif ($uploadSucceeded) {
+        Remove-OriginalFile -filePath $file.FullName -AppLogFilePath $AppLogFilePath
+    }
+    else {
+        Write-Log -logDetails "Upload failed. Original file NOT deleted from app folder." -logFilePath $AppLogFilePath -logType "ERROR"
+    }
+
+    # File cleanup process for files in /Archive older than $daysToKeepFiles
+    if ($enableFileDeletion -and $uploadSucceeded) {
         Remove-OldFiles -Directory $archivePath -DaysToKeepFiles $daysToKeepFiles -AppLogFilePath $AppLogFilePath
     } else {
-        Write-Log -logDetails "File Deletion turned off. Cleanup not completed." -logFilePath $AppLogFilePath -logType "INFO"
+        Write-Log -logDetails "File Deletion turned off or upload was not successful. Cleanup not completed." -logFilePath $AppLogFilePath -logType "INFO"
+    }
+
+    # Log file cleanup process for files older than $daysToKeepFiles
+    if ($enableFileDeletion) {
+        Remove-OldLogFiles `
+            -LogDirectory (Join-Path $AppFolderPath 'Log') `
+            -DaysToKeep $daysToKeepFiles `
+            -LogFilePath $AppLogFilePath
     }
 }
+
+# --------------------------
+# 10. Main script execution
+# --------------------------
 
 # Ensure ImportExcel module is available
 Ensure-ImportExcelModule
@@ -712,8 +818,11 @@ $fileUploadUtility = $SettingsObject.FileUploadUtility
 $clientURL = "https://$tenant.api.identitynow.com"
 $ClientID = $SettingsObject.ClientID
 $ClientSecret = $SettingsObject.ClientSecret
+$enableFileDeletion = $SettingsObject.enableFileDeletion
+$daysToKeepFiles = $SettingsObject.DaysToKeepFiles
+$executionLogDir = $SettingsObject.ExecutionLogDir
 
-# Main Execution
+# Define transactional variables
 $startTime = Get-Date
 $totalAppCount = 0
 $processedCount = 0
@@ -775,6 +884,14 @@ foreach ($AppFolder in $AppFolders) {
         Write-Log -logDetails "Error during processing for $AppFolderName. Error: $_" -logFilePath $executionLogFilePath -logType 'ERROR'
         $errorCount++
     }
+}
+
+# Execution Log File cleanup for files older than $daysToKeepFiles
+if ($enableFileDeletion) {
+    Remove-OldLogFiles `
+        -LogDirectory $executionLogDir `
+        -DaysToKeep $daysToKeepFiles `
+        -LogFilePath $executionLogFilePath
 }
 
 $endTime = Get-Date
