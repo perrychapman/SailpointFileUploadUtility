@@ -19,13 +19,62 @@ function Run-Script {
         return
     }
 
+    # Get base API URL
+    function Get-BaseApiUrl {
+        param (
+            [pscustomobject]$Settings
+        )
+
+        if (![string]::IsNullOrWhiteSpace($Settings.tenant)) {
+            return "https://$($Settings.tenant).api.identitynow.com"
+        }
+
+        if (![string]::IsNullOrWhiteSpace($Settings.tenantUrl)) {
+            $vanityUrl = $Settings.tenantUrl.TrimEnd('/')
+            $uri = [Uri]$vanityUrl
+            $hostName = $uri.Host
+
+            if ($hostName -match '^([^.]+)\.(.+)$') {
+                $sub = $matches[1]
+                $domain = $matches[2]
+                return "https://$sub.api.$domain"
+            } else {
+                Write-Log "ERROR: Invalid tenantUrl format: $($Settings.tenantUrl)"
+                return $null
+            }
+        }
+
+        Write-Log "ERROR: Both tenant and tenantUrl are missing in settings.json"
+        return $null
+    }
+
     # Set variables from settings
     $parentDirectory = $SettingsObject.ParentDirectory
     $tenant = $SettingsObject.tenant
-    $tenantUrl = "https://$tenant.api.identitynow.com"
+    
+    # Get base API URL using the helper function
+    $tenantUrl = Get-BaseApiUrl -Settings $SettingsObject
+    
+    if ($null -eq $tenantUrl) {
+        Write-Log "ERROR: Cannot determine API URL. Please provide either tenant or tenantUrl in settings.json"
+        return
+    }
+    
+    Write-Log "Using API URL: $tenantUrl"
+    
     $clientID = $SettingsObject.ClientID
     $clientSecret = $SettingsObject.ClientSecret
-    $csvPath = Join-Path -Path $parentDirectory -ChildPath "AppList_$tenant.csv"
+    
+    # Use tenant for CSV naming, or extract from vanity URL if tenant is empty
+    if ([string]::IsNullOrWhiteSpace($tenant)) {
+        # Try to extract tenant name from vanity URL for CSV naming
+        $csvTenant = ($SettingsObject.tenantUrl -replace 'https?://', '') -split '\.' | Select-Object -First 1
+    }
+    else {
+        $csvTenant = $tenant
+    }
+    
+    $csvPath = Join-Path -Path $parentDirectory -ChildPath "AppList_$csvTenant.csv"
 
     # Ensure ExecutionLog folder exists
     $executionLogPath = "./ExecutionLog"
@@ -58,7 +107,7 @@ function Run-Script {
 
     #Fetch sources from the API
     try {
-        $rawSources = Invoke-RestMethod -Uri "https://$tenant.api.identitynow.com/beta/sources" -Method Get -Headers $headers -ContentType "application/json;charset=utf-8"
+        $rawSources = Invoke-RestMethod -Uri "$tenantUrl/beta/sources" -Method Get -Headers $headers -ContentType "application/json;charset=utf-8"
         $rawJsonPath = ".\raw_api_response.json"
         $jsonResponse = $rawSources | ConvertTo-Json -Depth 10
         $jsonResponse | Out-File -FilePath $rawJsonPath -Encoding UTF8

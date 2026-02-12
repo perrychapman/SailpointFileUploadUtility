@@ -436,8 +436,8 @@ function Upload-ToSailPoint {
                 return $false
             } else {
                 Write-Log -logDetails "Upload completed successfully for SourceID: $sourceID." -logFilePath $AppLogFilePath -logType 'INFO'
-                return $true
                 $script:uploadCount++
+                return $true
             }
         }
         catch {
@@ -446,8 +446,8 @@ function Upload-ToSailPoint {
         }
     } else {
         Write-Log -logDetails "File path for upload file not found. Upload failed." -logFilePath $AppLogFilePath -logType 'ERROR'
-        return $false
         $script:errorCount++
+        return $false
     }
 }
 
@@ -561,6 +561,34 @@ function Remove-OldLogFiles {
 # 9. File Processing
 # ------------------------
 
+function Get-BaseApiUrl {
+    param (
+        [pscustomobject]$Settings
+    )
+
+    if (![string]::IsNullOrWhiteSpace($Settings.tenant)) {
+        return "https://$($Settings.tenant).api.identitynow.com"
+    }
+
+    if (![string]::IsNullOrWhiteSpace($Settings.tenantUrl)) {
+        $vanityUrl = $Settings.tenantUrl.TrimEnd('/')
+        $uri = [Uri]$vanityUrl
+        $hostName = $uri.Host
+
+        if ($hostName -match '^([^.]+)\.(.+)$') {
+            $sub = $matches[1]
+            $domain = $matches[2]
+            return "https://$sub.api.$domain"
+        } else {
+            Write-Error "Invalid tenantUrl format: $($Settings.tenantUrl)"
+            return $null
+        }
+    }
+
+    Write-Error "Both tenant and tenantUrl are missing in settings.json"
+    return $null
+}
+
 function Process-FilesInAppFolder {
     param (
         [string]$AppFolderPath,
@@ -573,7 +601,15 @@ function Process-FilesInAppFolder {
     $isDebug = $SettingsObject.isDebug
     $enableFileDeletion = $SettingsObject.enableFileDeletion
     $daysToKeepFiles = $SettingsObject.DaysToKeepFiles
-    $clientURL = "https://$tenant.api.identitynow.com"
+    
+    # Get base API URL using the helper function
+    $clientURL = Get-BaseApiUrl -Settings $SettingsObject
+    
+    if ($null -eq $clientURL) {
+        Write-Log -logDetails "ERROR: Cannot determine API URL. Please provide either tenant or tenantUrl in settings.json" -logFilePath $AppLogFilePath -logType "ERROR"
+        return
+    }
+    
     $sourceID = $AppConfig.sourceID
     $isMonarch = $AppConfig.isMonarch
     $disableField = $AppConfig.disableField
@@ -815,7 +851,15 @@ $executionLogFileName = "ExecutionLog_$logFileDate.csv"
 $executionLogFilePath = "./ExecutionLog/$executionLogFileName"
 $tenant = $SettingsObject.tenant
 $fileUploadUtility = $SettingsObject.FileUploadUtility
-$clientURL = "https://$tenant.api.identitynow.com"
+
+# Get base API URL using the helper function
+$clientURL = Get-BaseApiUrl -Settings $SettingsObject
+
+if ($null -eq $clientURL) {
+    Write-Error "Cannot determine API URL. Please provide either tenant or tenantUrl in settings.json"
+    exit 1
+}
+
 $ClientID = $SettingsObject.ClientID
 $ClientSecret = $SettingsObject.ClientSecret
 $enableFileDeletion = $SettingsObject.enableFileDeletion

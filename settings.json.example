@@ -1,0 +1,13 @@
+{
+    "ParentDirectory": "C:\\Powershell\\FileUploadUtility",
+    "AppFolder": "C:\\Powershell\\FileUploadUtility\\Import",
+    "FileUploadUtility": "C:\\Powershell\\sailpoint-file-upload-utility-4.1.0.jar",
+    "ClientSecret": "YourClientSecretHere",
+    "ClientID": "YourClientIDHere",
+    "tenant": "yourtenantname",
+    "isDebug": false,
+    "AppFilter": "",
+    "enableFileDeletion": false,
+    "DaysToKeepFiles": 30,
+    "ExecutionLogDir": ".\\ExecutionLog"
+}

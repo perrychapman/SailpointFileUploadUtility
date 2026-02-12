@@ -1,44 +1,116 @@
-# File Upload Script - README
+# SailPoint File Upload Utility - README
 
-This document provides detailed instructions for setting up, running, and troubleshooting the `FileUploadScript.ps1`.  
-It covers system requirements, setup steps, configuration details, scheduling with Windows Task Scheduler, file processing workflow, example configurations, and troubleshooting guidance.
+This document provides comprehensive instructions for setting up, running, and troubleshooting the SailPoint File Upload Utility.  
+It covers system requirements, setup steps, configuration details, scheduling options, file processing workflow, and troubleshooting guidance.
 
 ---
 
 ## 📖 Table of Contents
 
 1. [System Requirements](#system-requirements)
-2. [Setup Instructions](#setup-instructions)
-3. [Configuration Details](#configuration-details)
-4. [Running the Script](#running-the-script)
-5. [Task Scheduler Setup](#task-scheduler-setup)
-6. [File Processing Workflow](#file-processing-workflow)
-7. [Script Functions Overview](#script-functions-overview)
-8. [Sample Directory Structure](#sample-directory-structure)
-9. [Logging and Troubleshooting](#logging-and-troubleshooting)
-10. [Example User List and Configuration](#example-user-list-and-configuration)
-11. [Behavioral Logic & Script Defaults](#behavioral-logic--script-defaults)
-12. [Changelog](#changelog)
+2. [Quick Start Guide](#quick-start-guide)
+3. [GUI Management Console](#gui-management-console)
+4. [Setup Instructions](#setup-instructions)
+5. [Configuration Details](#configuration-details)
+6. [Automated Scheduling](#automated-scheduling)
+7. [File Processing Workflow](#file-processing-workflow)
+8. [Script Functions Overview](#script-functions-overview)
+9. [Sample Directory Structure](#sample-directory-structure)
+10. [Logging and Troubleshooting](#logging-and-troubleshooting)
+11. [Example User List and Configuration](#example-user-list-and-configuration)
+12. [Behavioral Logic & Script Defaults](#behavioral-logic--script-defaults)
+13. [Changelog](#changelog)
 
 ---
 
 ## System Requirements
 
 ### Hardware
-- Windows Operating System (Windows 10 or higher recommended)
+- Windows Operating System (Windows 10 or higher recommended) or Windows Server
 - At least 4GB RAM and 1GB free disk space
 
 ### Software
-- PowerShell 7+
-- Java Runtime Environment (JRE) version 11 or later
-- [ImportExcel PowerShell Module](https://github.com/dfinke/ImportExcel) (automatically installed by the script if not already installed)
-- Internet connection (required for API calls and ImportExcel installation)
-- Administrator permissions required to run the script
+- **PowerShell 7+** (required)
+- **Java Runtime Environment (JRE) version 11 or later** (required for file upload utility)
+- **[ImportExcel PowerShell Module](https://github.com/dfinke/ImportExcel)** (automatically installed by the script if not already installed)
+- Internet connection (required for initial API calls and ImportExcel installation)
+- Administrator permissions may be required for initial setup
 
 ### Required Files
-- `settings.json` (global settings file)
-- `FileUploadScript.ps1` (main execution script)
-- `config.json` (per-app configuration file)
+- `SailpointUtilityGUI.ps1` (GUI management console - **recommended for initial setup**)
+- `FileUploadScript.ps1` (main execution script - can run headless for scheduled tasks)
+- `DirectoryCreateScriptv3.ps1` (directory creation script - integrated into GUI)
+- `settings.json` (global settings file - created automatically if missing)
+- `config.json` (per-app configuration file - created automatically during directory creation)
+- SailPoint File Upload Utility JAR file (e.g., `sailpoint-file-upload-utility-4.1.0.jar`)
+
+---
+
+## Quick Start Guide
+
+### For New Users (Recommended)
+
+1. **Double-click `LaunchUtility.bat`** to launch the GUI
+   - (Or run `.\SailpointUtilityGUI.ps1` from PowerShell)
+
+2. **Configure Settings**
+   - Fill in your SailPoint tenant information
+   - Set directory paths
+   - Enter Client ID and Client Secret
+   - Click "Save Settings"
+
+3. **Create Directory Structure**
+   - Click "1. Create/Update Directories"
+   - This creates folders for all Delimited File sources in your tenant
+
+4. **Process and Upload Files**
+   - Place files in the appropriate app folders
+   - Click "2. Run File Upload Process"
+
+### For Experienced Users
+
+1. Edit `settings.json` directly with your configuration
+2. Run `.\DirectoryCreateScriptv3.ps1` to create directory structure
+3. Run `.\FileUploadScript.ps1` manually or via Task Scheduler
+
+---
+
+## GUI Management Console
+
+The **SailpointUtilityGUI.ps1** provides a user-friendly interface for managing the entire file upload workflow.
+
+### Features
+
+- **Persistent Settings**: All configuration changes are saved to `settings.json` and persist across sessions
+- **Directory Creation**: One-click setup of all required folder structures
+- **File Upload Processing**: Execute file processing and uploads from the GUI
+- **Real-time Logging**: View operation logs in real-time within the interface
+- **Quick Access**: Open settings file or Import folder directly from the GUI
+
+### How to Use
+
+1. **Launch the GUI**
+   ```powershell
+   .\SailpointUtilityGUI.ps1
+   ```
+
+2. **Configure Settings** (Left Panel)
+   - **Directory Locations**: Set paths for parent directory, app folder, JAR file, and log directory
+   - **SailPoint Credentials**: Enter your tenant name, Client ID, and Client Secret
+   - **Options**: Configure app filter, file retention days, debug mode, and file deletion
+
+3. **Save Settings**
+   - Click "Save Settings" to persist your configuration
+
+4. **Execute Actions** (Right Panel)
+   - **Create/Update Directories**: Sets up folder structure for all Delimited File sources
+   - **Run File Upload Process**: Processes and uploads files from configured folders
+   - **Open settings.json**: Quick access to edit the configuration file
+   - **Open Import Folder**: Navigate to the Import directory in Windows Explorer
+
+5. **Monitor Operations** (Bottom Panel)
+   - View real-time logs of all operations
+   - Logs display timestamps, operation type, and status
 
 ---
 
@@ -75,27 +147,112 @@ Install-Module ImportExcel -Scope CurrentUser
 
 ---
 
-## Running the Script
+## Automated Scheduling
 
-Run manually in PowerShell:
-```powershell
-pwsh.exe .\FileUploadScript.ps1
-```
+The **FileUploadScript.ps1** can run headless (without GUI) for automated scheduling on SailPoint IQ Service servers or any Windows server.
 
-Logs and processed files will appear in the configured folders.
+### Windows Task Scheduler Setup
+
+1. **Open Task Scheduler**
+   - Press `Win + R`, type `taskschd.msc`, and press Enter
+
+2. **Create a New Task**
+   - Click "Create Task" (not "Create Basic Task" for more options)
+   - **General Tab:**
+     - Name: "SailPoint File Upload"
+     - Description: "Automated SailPoint file processing and upload"
+     - Select "Run whether user is logged on or not"
+     - Check "Run with highest privileges" (if needed)
+
+3. **Triggers Tab**
+   - Click "New..."
+   - Choose your schedule (Daily, Weekly, etc.)
+   - Example: Daily at 2:00 AM
+   - Click "OK"
+
+4. **Actions Tab**
+   - Click "New..."
+   - Action: "Start a program"
+   - Program/script: `pwsh.exe` (or full path: `C:\Program Files\PowerShell\7\pwsh.exe`)
+   - Add arguments:
+     ```
+     -NoProfile -ExecutionPolicy Bypass -File "C:\Powershell\SailpointFileUploadUtility\FileUploadScript.ps1"
+     ```
+   - Start in (optional): `C:\Powershell\SailpointFileUploadUtility`
+   - Click "OK"
+
+5. **Conditions Tab** (Optional)
+   - Uncheck "Start the task only if the computer is on AC power" if needed
+
+6. **Settings Tab**
+   - Check "Run task as soon as possible after a scheduled start is missed"
+   - Check "If the task fails, restart every: 10 minutes"
+   - Click "OK"
+
+7. **Enter Credentials**
+   - Enter the username and password for the account that will run the task
+   - Click "OK"
+
+8. **Test the Task**
+   - Right-click on your task and select "Run"
+   - Check the execution logs in `ExecutionLogDir` to verify it ran successfully
+
+### Linux/Unix Cron Job Setup (for SailPoint IQ Service on Linux)
+
+If your SailPoint IQ Service runs on Linux with PowerShell Core installed:
+
+1. **Edit crontab**
+   ```bash
+   crontab -e
+   ```
+
+2. **Add schedule** (example: daily at 2:00 AM)
+   ```
+   0 2 * * * /usr/bin/pwsh -NoProfile -ExecutionPolicy Bypass -File /opt/sailpoint/FileUploadScript.ps1 >> /var/log/sailpoint-upload.log 2>&1
+   ```
+
+3. **Save and exit**
+
+4. **Verify cron job**
+   ```bash
+   crontab -l
+   ```
+
+### Best Practices for Automated Scheduling
+
+- **Test manually first**: Always test the FileUploadScript.ps1 manually before scheduling
+- **Monitor logs**: Regularly check the ExecutionLog directory for errors
+- **Set appropriate file retention**: Use `DaysToKeepFiles` to prevent disk space issues
+- **Enable file deletion**: Set `enableFileDeletion: true` in production environments
+- **Use AppFilter**: Process specific apps if needed to reduce execution time
+- **Debug mode off**: Set `isDebug: false` for production to avoid keeping debug files
 
 ---
 
-## Task Scheduler Setup
+## Running the Script
 
-1. Open **Task Scheduler** → Create Basic Task.
-2. Select a trigger (daily, weekly, etc.).
-3. Action → Start a Program → `pwsh.exe`
-4. Add arguments:
+### Manual Execution
+
+Run manually in PowerShell:
+```powershell
+cd C:\Powershell\SailpointFileUploadUtility
+.\FileUploadScript.ps1
 ```
--File "C:\Path\To\FileUploadScript.ps1"
+
+### Via GUI
+
+Use the GUI Management Console for one-time or testing:
+```powershell
+.\SailpointUtilityGUI.ps1
 ```
-5. Save and test.
+Then click "2. Run File Upload Process"
+
+### Scheduled Execution
+
+The script runs completely headless (no GUI) when executed by Task Scheduler or cron.
+All operations are logged to files in the `ExecutionLogDir`.
+
+Logs and processed files will appear in the configured folders.
 
 ---
 
