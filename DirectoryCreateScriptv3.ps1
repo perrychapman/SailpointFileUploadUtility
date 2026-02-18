@@ -214,7 +214,7 @@ function Run-Script {
             $configContent = @"
 {
     "sourceID": "$sourceID",
-    "isMonarch": false,
+
     "disableField": "",
     "disableValue": [""],
     "groupTypes": "",

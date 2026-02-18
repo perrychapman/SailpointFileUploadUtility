@@ -47,16 +47,13 @@ function Ensure-ImportExcelModule {
 
     $importedModule = Get-Module -Name $ModuleName
     if ($importedModule) {
-        Write-Host "Module '$ModuleName' is already imported."
         return
     }
 
     $availableModule = Get-Module -ListAvailable -Name $ModuleName
     if ($availableModule) {
-        Write-Host "Module '$ModuleName' is already installed locally."
         try {
             Import-Module $ModuleName -ErrorAction Stop
-            Write-Host "Module '$ModuleName' imported successfully."
             return
         }
         catch {
@@ -73,12 +70,9 @@ function Ensure-ImportExcelModule {
     }
 
     # Attempt to install the module
-    Write-Host "Module '$ModuleName' is not installed. Attempting to install..."
     try {
         Install-Module -Name $ModuleName -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-        Write-Host "Module '$ModuleName' installed successfully."
         Import-Module $ModuleName -ErrorAction Stop
-        Write-Host "Module '$ModuleName' imported successfully."
     }
     catch {
         Write-Warning "Failed to install module '$ModuleName' due to error: $_"
@@ -611,7 +605,6 @@ function Process-FilesInAppFolder {
     }
     
     $sourceID = $AppConfig.sourceID
-    $isMonarch = $AppConfig.isMonarch
     $disableField = $AppConfig.disableField
     $disableValues = if ($AppConfig.disableValue -is [System.Collections.IEnumerable]) { $AppConfig.disableValue } else { @($AppConfig.disableValue) }
     $groupTypes = $AppConfig.groupTypes.Split(',') | ForEach-Object { $_.Trim() }
@@ -632,7 +625,7 @@ function Process-FilesInAppFolder {
     $booleanValue = $AppConfig.booleanColumnValue
     $sheetNumber = if ($AppConfig.PSObject.Properties.Name -contains 'sheetNumber') { $AppConfig.sheetNumber } else { 1 }
 
-    $checkPath = if ($isMonarch) { Join-Path -Path $AppFolderPath -ChildPath "MonarchProcessed" } else { $AppFolderPath }
+    $checkPath = $AppFolderPath
     Write-Host $checkPath
 
     Write-Log -logDetails "Checking for CSV and Excel files in $checkPath..." -logFilePath $AppLogFilePath
