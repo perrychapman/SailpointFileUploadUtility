@@ -77,6 +77,7 @@ Each app folder has its own `config.json` (created automatically by the GUI):
   "dropColumns": "",
   "columnsToMerge": "",
   "mergedColumnName": "",
+  "mergeDelimiter": "",
   "groupTypes": "",
   "groupDelimiter": ",",
   "disableField": "",
@@ -101,6 +102,7 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 | Specify output columns | `schema` | `"id,name,email"` |
 | Remove specific columns | `dropColumns` | `"PhoneNumber,Fax"` |
 | Merge columns | `columnsToMerge` + `mergedColumnName` | `"FirstName,LastName"`  `"FullName"` |
+| Separator between merged values | `mergeDelimiter` | `" "` (space), `"-"` |
 | Disable users by status | `disableField` + `disableValue` | `"Status"` + `["Inactive","Terminated"]` |
 | Assign admin role | `adminColumnName` + `adminColumnValue` | `"Role"` + `"Admin"` |
 | Boolean entitlement flags | `booleanColumnList` + `booleanColumnValue` | `"Ent1,Ent2"` + `"Y"` |
@@ -112,10 +114,14 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 |--------|--------|
 | **App Management** | Opens popup to create/remove app directories and toggle upload |
 | **Refresh Apps** | Reloads app folder list from disk |
+| **Create New Source** | Wizard to create a Delimited File source in SailPoint ISC + local folder structure |
 | **Save Config** | Saves inline config editor changes to `config.json` |
 | **Reload Config** | Reloads config from disk (discards unsaved changes) |
 | **Upload Files** | Processes and uploads files for the selected app |
+| **Process Only** | Processes files for the selected app without uploading (ignores `isUpload`) |
 | **Upload User List** | Browse for a file and copy it to the selected app folder |
+| **Upload Schema** | 2-step wizard to upload an account schema to the selected source in SailPoint ISC |
+| **Reset Source** | Cascade-resets the selected source: clears entitlements → accounts → correlation → schema |
 | **Open App Log Folder** | Opens the app's `Log/` folder in Explorer |
 
 ### Settings Tab
@@ -157,6 +163,8 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 | No files processed | Verify files are in `Import/[AppName]/`; check `AppFilter` |
 | Cannot connect to SailPoint | Verify `tenant` or `tenantUrl` and credentials are correct |
 | `.xls` file not processed | Script auto-converts to `.xlsx`; ensure Java is installed |
+| Reset Source fails with "referenced by other configuration" | Ensure you are running the latest version — the reset must clear entitlements before schema |
+| Row-splitting not working despite `groupDelimiter` set | Re-save App Config in the GUI — older configs may have a corrupted delimiter; check that `groupTypes` is also set |
 
 ### Debug Mode
 1. Set `isDebug: true` in Settings tab (or `settings.json`)
@@ -196,6 +204,7 @@ Trigger:   Daily at 2:00 AM
 - Change `sourceID` after initial setup
 - Run multiple instances of `FileUploadScript.ps1` simultaneously
 - Commit `settings.json` to version control (it contains credentials)
+- Commit source data files (CSV/Excel) to version control — these are already excluded by `.gitignore`
 
 ##  Support
 

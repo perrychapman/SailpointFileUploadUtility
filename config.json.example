@@ -13,6 +13,7 @@
     "dropColumns": "",
     "columnsToMerge": "",
     "mergedColumnName": "",
+    "mergeDelimiter": "",
     "schema": "",
     "adminColumnName": "",
     "adminColumnValue": "",

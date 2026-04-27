@@ -138,10 +138,14 @@ The **SailpointUtilityGUI.ps1** provides a tabbed management interface for the e
 | **App Dropdown** | Select an app to load its `config.json` and most recent log |
 | **Refresh Apps** | Reload the list of app folders from disk |
 | **App Management** | Open the App Management popup to create/delete directories and set upload flags |
+| **Create New Source** | Wizard to create a new Delimited File source in SailPoint ISC and set up its local folder structure |
 | **Save Config** | Save edits made in the inline config editor back to the app's `config.json` |
 | **Reload Config** | Discard unsaved edits and reload the config from disk |
 | **Upload Files** | Run `FileUploadScript.ps1` scoped to the selected app (processes & uploads) |
+| **Process Only** | Process files for the selected app without uploading (ignores `isUpload` setting) |
 | **Upload User List** | Browse for a source file and copy it into the selected app's folder |
+| **Upload Schema** | 2-step wizard to upload an account schema to the selected source in SailPoint ISC |
+| **Reset Source** | Cascade-reset the selected source in SailPoint ISC: clears entitlements → accounts → correlation config → account schema |
 | **Open App Log Folder** | Open the app's `Log` directory in Windows Explorer |
 | **App Logs panel** | Displays the most recent log file for the selected app |
 
@@ -481,6 +485,7 @@ Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 | **`dropColumns`** | List of columns to remove from processing. | Comma-separated column names | `"Email,PhoneNumber"` |
 | **`columnsToMerge`** | Columns that should be merged into a new column. | Comma-separated column names | `"FirstName,LastName"` |
 | **`mergedColumnName`** | Name of the new merged column. | String | `"FullName"` |
+| **`mergeDelimiter`** | Separator inserted between values when merging columns. If blank, values are concatenated with no separator. | String | `" "` (space), `"-"`, `" \| "` |
 | **`adminColumnName`** | Column used to determine admin users. | Column Name from CSV/Excel | `"Role"` |
 | **`adminColumnValue`** | Value in `adminColumnName` that indicates an admin user. | String | `"Admin"`, `"SuperUser"` |
 | **`sheetNumber`** | Defines which worksheet to process in Excel files (1-based index). | Integer (`>= 1`) | `1`, `2`, `3` |
@@ -516,6 +521,9 @@ Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 | 2/21/2025 | Added `.xls`  `.xlsx` auto-conversion and `sheetNumber` selection |
 | 7/10/2025 | Added original file and log file cleanup logic; added `tenantUrl` (vanity URL) support |
 | 2/18/2026 | GUI redesigned with tabbed interface (App Management + Settings tabs); added inline `config.json` editor grouped by category; added App Management popup with directory status, per-app Enable Upload toggle, and Select/Deselect All; added per-app log viewer and execution log viewer with date dropdown; added Upload Files (single-app) and Upload User List buttons; added Operation Log popup in header |
+| 4/27/2026 | Fixed Reset Source API step order to correct cascade (entitlements → accounts → correlation → schema), preventing HTTP 400 "referenced by other configuration" errors when the schema was reset before entitlements |
+| 4/27/2026 | Fixed `groupDelimiter` save corruption — delimiter values containing commas (e.g., `","`) are now stored as plain strings instead of being converted to arrays, restoring row-splitting behavior |
+| 4/27/2026 | Documented Create New Source wizard, Upload Schema wizard, Reset Source button, Process Only button, and `mergeDelimiter` config field; updated `.gitignore` to exclude CSV and Excel data files |
 
 ---
 

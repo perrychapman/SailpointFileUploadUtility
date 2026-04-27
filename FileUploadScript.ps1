@@ -35,6 +35,11 @@
 # - Added log file deletion handling
 # =====================================================================
 
+# Script-level parameters
+param (
+    [switch]$ProcessOnly,   # When set, processes files but skips upload regardless of app config isUpload setting
+    [switch]$ForceUpload    # When set (GUI-initiated), forces upload regardless of app config isUpload setting
+)
 
 # ------------------------
 # 1. Ensure ImportExcel Module
@@ -232,6 +237,7 @@ function Trim-Data {
         [array]$dropColumns,          # Columns to drop
         [array]$columnsToMerge,       # Columns to merge
         [string]$mergedColumnName,    # Name of the new merged column
+        [string]$mergeDelimiter = ' ',   # Separator used when joining merged column values
         [string]$AppLogFilePath       # Log file path for logging
     )
 
@@ -281,7 +287,7 @@ function Trim-Data {
                 $mergedValue = ($columnsToMerge | ForEach-Object { 
                     $value = $row."$_"
                     if (![string]::IsNullOrEmpty($value)) { $value }
-                }) -join ' - '
+                }) -join $mergeDelimiter
                 $row | Add-Member -MemberType NoteProperty -Name $mergedColumnName -Value $mergedValue -Force
             }
             Write-Log -logDetails "Merged columns ($($columnsToMerge -join ', ')) into $mergedColumnName." -logFilePath $AppLogFilePath -logType 'INFO'
@@ -588,7 +594,8 @@ function Process-FilesInAppFolder {
         [string]$AppFolderPath,
         [PSObject]$AppConfig,
         [string]$AppLogFilePath,
-        [PSObject]$SettingsObject
+        [PSObject]$SettingsObject,
+        [switch]$ProcessOnly
     )
 
     $tenant = $SettingsObject.tenant
@@ -607,21 +614,29 @@ function Process-FilesInAppFolder {
     $sourceID = $AppConfig.sourceID
     $disableField = $AppConfig.disableField
     $disableValues = if ($AppConfig.disableValue -is [System.Collections.IEnumerable]) { $AppConfig.disableValue } else { @($AppConfig.disableValue) }
-    $groupTypes = $AppConfig.groupTypes.Split(',') | ForEach-Object { $_.Trim() }
-    $groupDelimiter = $AppConfig.groupDelimiter
+    $groupTypes = if ($AppConfig.groupTypes -is [System.Array]) { @($AppConfig.groupTypes | Where-Object { $_ }) } elseif (![string]::IsNullOrEmpty($AppConfig.groupTypes)) { $AppConfig.groupTypes.Split(',') | ForEach-Object { $_.Trim() } } else { @() }
+    $groupDelimiter = if ($AppConfig.groupDelimiter -is [System.Array]) { $AppConfig.groupDelimiter[0] } else { $AppConfig.groupDelimiter }
     $isUpload = $AppConfig.isUpload
+    if ($ProcessOnly) {
+        $isUpload = $false
+        Write-Log -logDetails "Process Only mode: upload will be skipped for this run." -logFilePath $AppLogFilePath -logType 'INFO'
+    } elseif ($ForceUpload) {
+        $isUpload = $true
+        Write-Log -logDetails "Force Upload mode: upload will proceed regardless of isUpload setting." -logFilePath $AppLogFilePath -logType 'INFO'
+    }
     $headerRow = $AppConfig.headerRow
     $trimTopRows = $AppConfig.trimTopRows
     $trimBottomRows = $AppConfig.trimBottomRows
     $trimLeftColumns = $AppConfig.trimLeftColumns
     $trimRightColumns = $AppConfig.trimRightColumns
-    $schema = $AppConfig.schema.Split(',') | ForEach-Object { $_.Trim() }
-    $dropColumns = $AppConfig.dropColumns.Split(',') | ForEach-Object { $_.Trim().ToLower() }
-    $columnsToMerge = if ($AppConfig.columnsToMerge -ne $null) { $AppConfig.columnsToMerge.Split(',') | ForEach-Object { $_.Trim() } } else { @() }
+    $schema = if ($AppConfig.schema -is [System.Array]) { @($AppConfig.schema | Where-Object { $_ }) } elseif (![string]::IsNullOrEmpty($AppConfig.schema)) { $AppConfig.schema.Split(',') | ForEach-Object { $_.Trim() } } else { @() }
+    $dropColumns = if ($AppConfig.dropColumns -is [System.Array]) { @($AppConfig.dropColumns | Where-Object { $_ } | ForEach-Object { $_.Trim().ToLower() }) } elseif (![string]::IsNullOrEmpty($AppConfig.dropColumns)) { $AppConfig.dropColumns.Split(',') | ForEach-Object { $_.Trim().ToLower() } } else { @() }
+    $columnsToMerge = if ($AppConfig.columnsToMerge -is [System.Array]) { @($AppConfig.columnsToMerge | Where-Object { $_ }) } elseif (![string]::IsNullOrEmpty($AppConfig.columnsToMerge)) { $AppConfig.columnsToMerge.Split(',') | ForEach-Object { $_.Trim() } } else { @() }
     $mergedColumnName = $AppConfig.mergedColumnName
-    $adminColumnName = $AppConfig.adminColumnName
-    $adminColumnValue = $AppConfig.adminColumnValue
-    $booleanColumns = if ($AppConfig.booleanColumnList -ne $null) {$AppConfig.booleanColumnList.Split(",").Trim() } else { @() }
+    $mergeDelimiter = if ($AppConfig.PSObject.Properties.Name -contains 'mergeDelimiter' -and ![string]::IsNullOrEmpty($AppConfig.mergeDelimiter)) { $AppConfig.mergeDelimiter } else { ' ' }
+    $adminColumnName = if ($AppConfig.adminColumnName -is [System.Array]) { $AppConfig.adminColumnName[0] } else { $AppConfig.adminColumnName }
+    $adminColumnValue = if ($AppConfig.adminColumnValue -is [System.Array]) { $AppConfig.adminColumnValue[0] } else { $AppConfig.adminColumnValue }
+    $booleanColumns = if ($AppConfig.booleanColumnList -is [System.Array]) { @($AppConfig.booleanColumnList | Where-Object { $_ }) } elseif (![string]::IsNullOrEmpty($AppConfig.booleanColumnList)) { $AppConfig.booleanColumnList.Split(',') | ForEach-Object { $_.Trim() } } else { @() }
     $booleanValue = $AppConfig.booleanColumnValue
     $sheetNumber = if ($AppConfig.PSObject.Properties.Name -contains 'sheetNumber') { $AppConfig.sheetNumber } else { 1 }
 
@@ -696,9 +711,9 @@ function Process-FilesInAppFolder {
     $users = Get-FileData -filePath $file.FullName -sheetNumber $sheetNumber -headerRow $headerRow -AppLogFilePath $AppLogFilePath
 
     if(!$schema){
-        $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -trimLeftColumns $trimLeftColumns -trimRightColumns $trimRightColumns -dropColumns $dropColumns -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -AppLogFilePath $AppLogFilePath
+        $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -trimLeftColumns $trimLeftColumns -trimRightColumns $trimRightColumns -dropColumns $dropColumns -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -mergeDelimiter $mergeDelimiter -AppLogFilePath $AppLogFilePath
     } else {
-        $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -AppLogFilePath $AppLogFilePath
+        $users = Trim-Data -data $users -trimTopRows $trimTopRows -trimBottomRows $trimBottomRows -columnsToMerge $columnsToMerge -mergedColumnName $mergedColumnName -mergeDelimiter $mergeDelimiter -AppLogFilePath $AppLogFilePath
     }
 
     if ($users.Count -eq 0) {
@@ -790,8 +805,11 @@ function Process-FilesInAppFolder {
     # Archive processed file
     Archive-File -file $processedFile -archivePath $archivePath -AppLogFilePath $AppLogFilePath
 
-    # Original file deletion handling based on isDebug and upload to Sailpoint result
-    if ($isDebug) {
+    # Original file deletion handling based on isDebug, ProcessOnly, and upload result
+    if ($ProcessOnly) {
+        Write-Log -logDetails "Process Only mode: source file preserved in app folder." -logFilePath $AppLogFilePath -logType "INFO"
+    }
+    elseif ($isDebug) {
         Remove-OriginalFile -filePath $file.FullName -AppLogFilePath $AppLogFilePath
     }
     elseif ($uploadSucceeded) {
@@ -909,7 +927,7 @@ foreach ($AppFolder in $AppFolders) {
 
     try {
         # Process files in the folder
-        Process-FilesInAppFolder -AppFolderPath $AppFolderPath -AppConfig $AppConfig -AppLogFilePath $AppLogFilePath -SettingsObject $SettingsObject
+        Process-FilesInAppFolder -AppFolderPath $AppFolderPath -AppConfig $AppConfig -AppLogFilePath $AppLogFilePath -SettingsObject $SettingsObject -ProcessOnly:$ProcessOnly
         
         $endAppTime = Get-Date
         $appDuration = New-TimeSpan -Start $startAppTime -End $endAppTime

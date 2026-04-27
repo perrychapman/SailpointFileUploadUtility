@@ -1,3 +1,11 @@
 settings.json
 config.json
 FileMatcher.ps1
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+
+# Debug output
+raw_api_response.json
