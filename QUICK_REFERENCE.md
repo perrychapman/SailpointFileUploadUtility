@@ -23,7 +23,7 @@
 | `FileUploadScript.ps1` | Headless upload script (used by GUI and Task Scheduler) |
 | `DirectoryCreateScriptv3.ps1` | Standalone directory creation script |
 | `CheckPrerequisites.ps1` | Environment validation (PowerShell, Java, JAR, settings) |
-| `FileMatcher.ps1` | Utility to match files to app folders by name pattern |
+| `FileMatcher.ps1` | Legacy standalone file matcher (matching is now built-in) |
 | `settings.json` | Global configuration (auto-created by GUI if missing) |
 | `Import/[AppName]/` | Drop source files here for processing |
 | `Import/[AppName]/config.json` | Per-app configuration (auto-created) |
@@ -36,6 +36,7 @@
 ```json
 {
   "ParentDirectory": "C:\\Powershell\\FileUploadUtility",
+  "SourceDirectory": "C:\\Path\\To\\SourceFiles",
   "AppFolder": "C:\\Powershell\\FileUploadUtility\\Import",
   "FileUploadUtility": "path\\to\\sailpoint-file-upload-utility.jar",
   "ExecutionLogDir": ".\\ExecutionLog",
@@ -54,6 +55,7 @@
 
 - **tenant**: Your SailPoint tenant name (e.g., `mycompany` from `mycompany.identitynow.com`)
 - **tenantUrl**: Use instead of `tenant` for vanity/partner URLs (e.g., `https://partner7354.identitynow-demo.com`). Only one is needed; `tenant` takes priority if both are set.
+- **SourceDirectory**: Optional folder containing source files to be automatically matched and copied into app folders before processing. Leave blank to disable. Matching is by filename — exact substring match first, then token-based fallback (splits app name on spaces/hyphens/underscores and requires all tokens to appear in the filename).
 - **enableFileDeletion**: Set to `true` in production to auto-delete old archived and log files
 - **DaysToKeepFiles**: How many days to keep archived files and logs before deletion
 - **AppFilter**: Process only a specific app (leave blank for all apps)
@@ -119,6 +121,7 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 | **Reload Config** | Reloads config from disk (discards unsaved changes) |
 | **Upload Files** | Processes and uploads files for the selected app |
 | **Process Only** | Processes files for the selected app without uploading (ignores `isUpload`) |
+| **Match Files** | Copies the most recent matching file from `SourceDirectory` into the selected app's folder; logs result to execution log |
 | **Upload User List** | Browse for a file and copy it to the selected app folder |
 | **Upload Schema** | 2-step wizard to upload an account schema to the selected source in SailPoint ISC |
 | **Reset Source** | Cascade-resets the selected source: clears entitlements → accounts → correlation → schema |
@@ -127,15 +130,24 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 ### Settings Tab
 | Section | Key Fields |
 |---------|-----------|
-| Directory Locations | Parent Directory, App Folder, JAR path, Execution Log Dir |
+| Directory Locations | Parent Directory, App Folder, Source Directory, JAR path, Execution Log Dir |
 | SailPoint Credentials | Tenant, Custom Tenant URL, Client ID, Client Secret |
 | Options | Days to Keep Files, Debug Mode, Enable File Deletion |
+| **Save Settings** | Persists all changes to `settings.json` |
+| **Match All Files** | Copies the most recent matching file from `SourceDirectory` into every app folder; shows a summary and logs results to execution log |
 
 ##  Workflow
 
 ### One-Time Setup
 1. Launch GUI  Settings tab  configure all fields  Save Settings
 2. App Management tab  App Management popup  select apps  Apply Changes
+
+### Source File Matching (Optional)
+1. Set `SourceDirectory` in Settings tab to the folder containing your source files
+2. Name source files so they contain the app folder name (e.g., `Legacy_Payroll_Export.csv` for app `Legacy_Payroll`)
+3. Use **Match All Files** (Settings tab) to push all matching files in one click, or **Match Files** per-app
+4. Matching falls back to token mode: `Mainframe-RACF` will match any file containing both `Mainframe` and `RACF`
+5. `FileUploadScript.ps1` also runs matching automatically at the start of each app's run if `SourceDirectory` is set
 
 ### Per-App Config
 1. Select app in dropdown
@@ -165,6 +177,7 @@ Each app folder has its own `config.json` (created automatically by the GUI):
 | `.xls` file not processed | Script auto-converts to `.xlsx`; ensure Java is installed |
 | Reset Source fails with "referenced by other configuration" | Ensure you are running the latest version — the reset must clear entitlements before schema |
 | Row-splitting not working despite `groupDelimiter` set | Re-save App Config in the GUI — older configs may have a corrupted delimiter; check that `groupTypes` is also set |
+| "No files found" on Match Files / Match All Files | Check `SourceDirectory` in Settings; ensure filenames contain the app name or its tokens (e.g., both `Mainframe` and `RACF` for `Mainframe-RACF`) |
 
 ### Debug Mode
 1. Set `isDebug: true` in Settings tab (or `settings.json`)

@@ -63,7 +63,7 @@ It covers system requirements, setup steps, configuration details, scheduling op
 - `FileUploadScript.ps1` (main execution script  runs headless for scheduled tasks)
 - `DirectoryCreateScriptv3.ps1` (standalone directory creation script  also integrated into the GUI)
 - `CheckPrerequisites.ps1` (optional  validates environment before first run)
-- `FileMatcher.ps1` (utility  matches files to app folders by name pattern)
+- `FileMatcher.ps1` (legacy standalone utility  source file matching is now built into the GUI and `FileUploadScript.ps1`)
 - `settings.json` (global settings file  created automatically by the GUI if missing)
 - `config.json` (per-app configuration file  created automatically during directory creation)
 - SailPoint File Upload Utility JAR file (e.g., `sailpoint-file-upload-utility-4.1.0.jar`)
@@ -143,6 +143,7 @@ The **SailpointUtilityGUI.ps1** provides a tabbed management interface for the e
 | **Reload Config** | Discard unsaved edits and reload the config from disk |
 | **Upload Files** | Run `FileUploadScript.ps1` scoped to the selected app (processes & uploads) |
 | **Process Only** | Process files for the selected app without uploading (ignores `isUpload` setting) |
+| **Match Files** | Copy the most recent matching file from `SourceDirectory` into the selected app's folder (exact match, then token fallback); logs result to the execution log |
 | **Upload User List** | Browse for a source file and copy it into the selected app's folder |
 | **Upload Schema** | 2-step wizard to upload an account schema to the selected source in SailPoint ISC |
 | **Reset Source** | Cascade-reset the selected source in SailPoint ISC: clears entitlements → accounts → correlation config → account schema |
@@ -159,10 +160,11 @@ The **SailpointUtilityGUI.ps1** provides a tabbed management interface for the e
 
 | Section | Fields |
 |---------|--------|
-| **Directory Locations** | Parent Directory, App Folder, File Upload Utility JAR, Execution Log Directory |
+| **Directory Locations** | Parent Directory, App Folder, Source Directory, File Upload Utility JAR, Execution Log Directory |
 | **SailPoint Client Credentials** | Tenant, Custom Tenant URL (vanity URLs), Client ID, Client Secret |
 | **Options** | Days to Keep Files, Debug Mode, Enable File Deletion |
 | **Save Settings** | Persists all changes to `settings.json` |
+| **Match All Files** | Copies the most recent matching file from `SourceDirectory` into every app folder (exact match first, then token-based fallback); logs results to the execution log |
 | **Execution Log Viewer** | Select an execution log from the dropdown to view it in the right panel |
 
 > **Tenant vs Custom Tenant URL**: Use **Tenant** for standard IdentityNow tenants (e.g., `mycompany` from `mycompany.identitynow.com`). Use **Custom Tenant URL** for vanity/partner domains (e.g., `https://partner7354.identitynow-demo.com`). Only one is required.
@@ -189,6 +191,7 @@ The **SailpointUtilityGUI.ps1** provides a tabbed management interface for the e
 ```json
 {
   "ParentDirectory": "C:\\DataProcessing",
+  "SourceDirectory": "C:\\DataProcessing\\SourceFiles",
   "AppFolder": "C:\\DataProcessing\\Import",
   "FileUploadUtility": "C:\\Tools\\sailpoint-file-upload-utility-4.1.0.jar",
   "ClientID": "YourClientID",
@@ -203,6 +206,7 @@ The **SailpointUtilityGUI.ps1** provides a tabbed management interface for the e
 }
 ```
    > **Note:** Set either `tenant` (e.g. `mycompany`) **or** `tenantUrl` (e.g. `https://partner7354.identitynow-demo.com`). If `tenant` is set, it takes priority.
+   > **Note:** `SourceDirectory` is optional. Leave blank to disable automatic source file matching.
 
 ---
 
@@ -331,6 +335,12 @@ Logs and processed files will appear in the configured folders.
    - If `AppFilter` is set, only matching folders are processed.
 
 4. **For Each App Folder:**
+   - **Copy Source File (if `SourceDirectory` is configured)**
+     - Searches `SourceDirectory` for files whose name contains the app folder name (exact match).
+     - If no exact match is found, falls back to token-based matching: splits the app name on spaces, hyphens, and underscores, then requires all significant tokens (3+ characters) to appear in the filename.
+     - Copies the most recently modified matching file into the app folder.
+     - Logs the result (matched file name and destination, or "no match") to both the app log and execution log.
+
    - **Load `config.json`**
      - Reads app-specific settings.
      - If missing/invalid, logs error and skips.
@@ -385,6 +395,7 @@ Logs and processed files will appear in the configured folders.
 | `Remove-OldFiles` | Deletes archived files older than `DaysToKeepFiles` |
 | `Remove-OldLogFiles` | Deletes log files older than `DaysToKeepFiles` |
 | `Remove-OriginalFile` | Deletes the original source file from the app folder after processing |
+| `Copy-SourceFileToAppFolder` | Copies the most recent matching file from `SourceDirectory` into an app folder; uses exact match then token-based fallback |
 | `Process-FilesInAppFolder` | Orchestrates the full processing pipeline for a single app folder |
 
 ---
@@ -524,6 +535,7 @@ Bob,Brown,bob.brown@example.com,User,Inactive,Finance
 | 4/27/2026 | Fixed Reset Source API step order to correct cascade (entitlements → accounts → correlation → schema), preventing HTTP 400 "referenced by other configuration" errors when the schema was reset before entitlements |
 | 4/27/2026 | Fixed `groupDelimiter` save corruption — delimiter values containing commas (e.g., `","`) are now stored as plain strings instead of being converted to arrays, restoring row-splitting behavior |
 | 4/27/2026 | Documented Create New Source wizard, Upload Schema wizard, Reset Source button, Process Only button, and `mergeDelimiter` config field; updated `.gitignore` to exclude CSV and Excel data files |
+| 4/29/2026 | Added `SourceDirectory` setting and automatic source file matching: files in `SourceDirectory` are matched to app folders by name (exact substring match, then token-based fallback for hyphenated/spaced names like `Mainframe-RACF`). Most recent matching file is copied into the app folder before processing. Added **Match Files** button (per-app, App Management tab) and **Match All Files** button (Settings tab) in the GUI. Match results logged to execution log CSV. |
 
 ---
 
