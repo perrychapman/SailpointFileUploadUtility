@@ -8,7 +8,7 @@ It covers system requirements, setup steps, configuration details, scheduling op
 ##  Table of Contents
 
 - [SailPoint File Upload Utility - README](#sailpoint-file-upload-utility---readme)
-  - [ Table of Contents](#-table-of-contents)
+  - [Table of Contents](#table-of-contents)
   - [System Requirements](#system-requirements)
     - [Hardware](#hardware)
     - [Software](#software)

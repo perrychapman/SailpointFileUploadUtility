@@ -558,7 +558,61 @@ function Remove-OldLogFiles {
 }
 
 # ------------------------
-# 9. File Processing
+# 9. Source File Matching
+# ------------------------
+
+function Copy-SourceFileToAppFolder {
+    param (
+        [string]$SourceDirectory,
+        [string]$AppFolderName,
+        [string]$AppFolderPath,
+        [string]$AppLogFilePath,
+        [string]$ExecutionLogFilePath
+    )
+
+    if (-not (Test-Path -Path $SourceDirectory)) {
+        Write-Log -logDetails "Source directory not found: $SourceDirectory. Skipping source file copy." -logFilePath $AppLogFilePath -logType 'WARNING'
+        return
+    }
+
+    # Exact match first; fall back to all significant tokens appearing in the filename
+    $allSourceFiles = Get-ChildItem -Path $SourceDirectory -File
+    $matchingFiles  = $allSourceFiles | Where-Object { $_.Name -imatch [regex]::Escape($AppFolderName) }
+    if (-not $matchingFiles -or $matchingFiles.Count -eq 0) {
+        $tokens = $AppFolderName -split '[\s\-_]+' | Where-Object { $_.Length -ge 3 }
+        if ($tokens.Count -gt 0) {
+            $matchingFiles = $allSourceFiles | Where-Object {
+                $n = $_.Name
+                ($tokens | Where-Object { $n -imatch [regex]::Escape($_) }).Count -eq $tokens.Count
+            }
+        }
+    }
+
+    if (-not $matchingFiles -or $matchingFiles.Count -eq 0) {
+        $msg = "Source file match: No matching files found for '$AppFolderName' in $SourceDirectory."
+        Write-Log -logDetails $msg -logFilePath $AppLogFilePath -logType 'INFO'
+        if ($ExecutionLogFilePath) { Write-Log -logDetails $msg -logFilePath $ExecutionLogFilePath -logType 'INFO' }
+        return
+    }
+
+    $mostRecentFile = $matchingFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $destinationPath = Join-Path -Path $AppFolderPath -ChildPath $mostRecentFile.Name
+
+    try {
+        Copy-Item -Path $mostRecentFile.FullName -Destination $destinationPath -Force
+        $msg = "Source file match: Copied '$($mostRecentFile.Name)' from $SourceDirectory to $AppFolderPath."
+        Write-Log -logDetails $msg -logFilePath $AppLogFilePath -logType 'INFO'
+        if ($ExecutionLogFilePath) { Write-Log -logDetails $msg -logFilePath $ExecutionLogFilePath -logType 'INFO' }
+    }
+    catch {
+        $msg = "Source file match: Failed to copy '$($mostRecentFile.Name)' to $AppFolderPath. Error: $_"
+        Write-Log -logDetails $msg -logFilePath $AppLogFilePath -logType 'ERROR'
+        if ($ExecutionLogFilePath) { Write-Log -logDetails $msg -logFilePath $ExecutionLogFilePath -logType 'ERROR' }
+    }
+}
+
+# ------------------------
+# 10. File Processing
 # ------------------------
 
 function Get-BaseApiUrl {
@@ -924,6 +978,16 @@ foreach ($AppFolder in $AppFolders) {
     }
 
     $AppConfig = Get-Content -Path $configFilePath | ConvertFrom-Json
+
+    # Copy matching source file into app folder if SourceDirectory is configured
+    if (-not [string]::IsNullOrWhiteSpace($SettingsObject.SourceDirectory)) {
+        Copy-SourceFileToAppFolder `
+            -SourceDirectory $SettingsObject.SourceDirectory `
+            -AppFolderName $AppFolderName `
+            -AppFolderPath $AppFolderPath `
+            -AppLogFilePath $AppLogFilePath `
+            -ExecutionLogFilePath $executionLogFilePath
+    }
 
     try {
         # Process files in the folder

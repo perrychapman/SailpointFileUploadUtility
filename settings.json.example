@@ -1,5 +1,6 @@
 {
     "ParentDirectory": "C:\\Powershell\\FileUploadUtility",
+    "SourceDirectory": "C:\\Path\\To\\SourceFiles",
     "AppFolder": "C:\\Powershell\\FileUploadUtility\\Import",
     "FileUploadUtility": "C:\\Powershell\\sailpoint-file-upload-utility-4.1.0.jar",
     "ClientSecret": "YourClientSecretHere",

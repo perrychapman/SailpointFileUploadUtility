@@ -51,6 +51,7 @@ function Create-DefaultSettings {
     $defaultSettings = @{
         ParentDirectory    = "C:\Powershell\FileUploadUtility"
         AppFolder          = "C:\Powershell\FileUploadUtility\Import"
+        SourceDirectory    = ""
         FileUploadUtility  = "C:\Powershell\sailpoint-file-upload-utility-4.1.0.jar"
         ClientSecret       = "Secret"
         ClientID           = "ClientID"
@@ -85,6 +86,11 @@ function Load-Settings {
         # Add tenantUrl if missing (for vanity URLs)
         if (-not $settings.PSObject.Properties['tenantUrl']) {
             $settings | Add-Member -MemberType NoteProperty -Name 'tenantUrl' -Value '' -Force
+        }
+        
+        # Add SourceDirectory if missing
+        if (-not $settings.PSObject.Properties['SourceDirectory']) {
+            $settings | Add-Member -MemberType NoteProperty -Name 'SourceDirectory' -Value '' -Force
         }
         
         Write-Log "Settings loaded successfully."
@@ -355,6 +361,203 @@ function Run-DirectoryCreation {
     Write-Log "Created: $createdCount folders | Skipped: $skippedCount existing folders" "INFO"
     
     return $true
+}
+
+# ------------------------
+# File Match Logic (Single App)
+# ------------------------
+
+function Write-ExecutionLog {
+    # Writes a CSV row to today's execution log file, matching the format used by FileUploadScript.ps1.
+    param (
+        [PSObject]$settings,
+        [string]$message,
+        [string]$logType = 'INFO'
+    )
+    try {
+        $logDir = $settings.ExecutionLogDir
+        if ([string]::IsNullOrWhiteSpace($logDir)) { return }
+        if (-not (Test-Path -Path $logDir)) { New-Item -Path $logDir -ItemType Directory | Out-Null }
+        $logFilePath = Join-Path -Path $logDir -ChildPath ("ExecutionLog_" + (Get-Date -Format 'yyyyMMdd') + ".csv")
+        $entry = [PSCustomObject]@{
+            'Date/Time'   = (Get-Date -Format 'HH:mm:ss')
+            'Log Type'    = $logType
+            'Log Details' = $message
+        }
+        if (-not (Test-Path -Path $logFilePath)) {
+            $entry | Export-Csv -Path $logFilePath -NoTypeInformation
+        } else {
+            $entry | Export-Csv -Path $logFilePath -NoTypeInformation -Append
+        }
+    }
+    catch { <# non-fatal #> }
+}
+
+function Get-SourceFilesForApp {
+    # Returns files from SourceDirectory whose names match AppName.
+    # First tries an exact substring match; if nothing found, falls back to
+    # requiring ALL significant tokens (3+ chars) of the app name to appear
+    # in the filename (case-insensitive).
+    param (
+        [string]$SourceDirectory,
+        [string]$AppName
+    )
+
+    $allFiles = Get-ChildItem -Path $SourceDirectory -File
+
+    # Exact match
+    $matched = $allFiles | Where-Object { $_.Name -imatch [regex]::Escape($AppName) }
+    if ($matched) { return $matched }
+
+    # Loose match — all significant tokens must appear in the filename
+    $tokens = $AppName -split '[\s\-_]+' | Where-Object { $_.Length -ge 3 }
+    if ($tokens.Count -gt 0) {
+        $matched = $allFiles | Where-Object {
+            $name = $_.Name
+            ($tokens | Where-Object { $name -imatch [regex]::Escape($_) }).Count -eq $tokens.Count
+        }
+    }
+
+    return $matched
+}
+
+function Run-FileMatchOnly {
+    param (
+        [PSObject]$settings,
+        [string]$appName
+    )
+
+    Write-Log "=== Starting File Match for App: $appName ===" "INFO"
+
+    if ([string]::IsNullOrWhiteSpace($settings.SourceDirectory)) {
+        Write-Log "ERROR: Source Directory is not configured in Settings." "ERROR"
+        [System.Windows.MessageBox]::Show("Source Directory is not configured.`n`nPlease set the 'Source Directory' path in the Settings tab first.", "Configuration Required", "OK", "Warning")
+        return $false
+    }
+
+    if (-not (Test-Path -Path $settings.SourceDirectory)) {
+        Write-Log "ERROR: Source Directory does not exist: $($settings.SourceDirectory)" "ERROR"
+        [System.Windows.MessageBox]::Show("Source Directory does not exist:`n$($settings.SourceDirectory)", "Directory Not Found", "OK", "Error")
+        return $false
+    }
+
+    $appFolderPath = Join-Path -Path $settings.AppFolder -ChildPath $appName
+
+    if (-not (Test-Path -Path $appFolderPath)) {
+        Write-Log "ERROR: App folder not found: $appFolderPath" "ERROR"
+        return $false
+    }
+
+    $matchingFiles = Get-SourceFilesForApp -SourceDirectory $settings.SourceDirectory -AppName $appName
+
+    if (-not $matchingFiles -or $matchingFiles.Count -eq 0) {
+        Write-Log "No matching source files found for '$appName' in $($settings.SourceDirectory)." "INFO"
+        [System.Windows.MessageBox]::Show("No files matching '$appName' were found in:`n$($settings.SourceDirectory)", "No Files Found", "OK", "Information")
+        return $false
+    }
+
+    $mostRecentFile = $matchingFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $destinationPath = Join-Path -Path $appFolderPath -ChildPath $mostRecentFile.Name
+
+    try {
+        Copy-Item -Path $mostRecentFile.FullName -Destination $destinationPath -Force
+        $msg = "Source file match: Copied '$($mostRecentFile.Name)' from $($settings.SourceDirectory) to $appFolderPath."
+        Write-Log $msg "INFO"
+        Write-ExecutionLog -settings $settings -message $msg -logType 'INFO'
+        [System.Windows.MessageBox]::Show("File matched and copied successfully:`n`n$($mostRecentFile.Name)`n`nDestination: $appFolderPath", "Match Complete", "OK", "Information")
+        return $true
+    }
+    catch {
+        $msg = "Source file match: Failed to copy '$($mostRecentFile.Name)' to $appFolderPath. $_"
+        Write-Log $msg "ERROR"
+        Write-ExecutionLog -settings $settings -message $msg -logType 'ERROR'
+        return $false
+    }
+}
+
+function Run-MatchAllFiles {
+    param (
+        [PSObject]$settings
+    )
+
+    Write-Log "=== Starting Match All Files ===" "INFO"
+    Write-ExecutionLog -settings $settings -message "Match All Files started from $($settings.SourceDirectory)." -logType 'INFO'
+    if ([string]::IsNullOrWhiteSpace($settings.SourceDirectory)) {
+        Write-Log "ERROR: Source Directory is not configured in Settings." "ERROR"
+        [System.Windows.MessageBox]::Show("Source Directory is not configured.`n`nPlease set the 'Source Directory' path in the Settings tab first.", "Configuration Required", "OK", "Warning")
+        return
+    }
+
+    if (-not (Test-Path -Path $settings.SourceDirectory)) {
+        Write-Log "ERROR: Source Directory does not exist: $($settings.SourceDirectory)" "ERROR"
+        [System.Windows.MessageBox]::Show("Source Directory does not exist:`n$($settings.SourceDirectory)", "Directory Not Found", "OK", "Error")
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($settings.AppFolder)) {
+        Write-Log "ERROR: App Folder is not configured in Settings." "ERROR"
+        [System.Windows.MessageBox]::Show("App Folder is not configured.`n`nPlease set the 'App Folder' path in the Settings tab first.", "Configuration Required", "OK", "Warning")
+        return
+    }
+
+    $appFolders = Get-ChildItem -Path $settings.AppFolder -Directory -ErrorAction SilentlyContinue
+    if (-not $appFolders -or $appFolders.Count -eq 0) {
+        Write-Log "No app folders found in $($settings.AppFolder)." "INFO"
+        [System.Windows.MessageBox]::Show("No app folders found in:`n$($settings.AppFolder)", "No Apps Found", "OK", "Information")
+        return
+    }
+
+    $succeeded = [System.Collections.Generic.List[string]]::new()
+    $skipped   = [System.Collections.Generic.List[string]]::new()
+    $failed    = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($appFolder in $appFolders) {
+        $appName = $appFolder.Name
+        $matchingFiles = Get-SourceFilesForApp -SourceDirectory $settings.SourceDirectory -AppName $appName
+
+        if (-not $matchingFiles -or $matchingFiles.Count -eq 0) {
+            $msg = "Source file match: No matching files for '$appName'. Skipping."
+            Write-Log $msg "INFO"
+            Write-ExecutionLog -settings $settings -message $msg -logType 'INFO'
+            $skipped.Add($appName)
+            continue
+        }
+
+        $mostRecentFile = $matchingFiles | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        $destinationPath = Join-Path -Path $appFolder.FullName -ChildPath $mostRecentFile.Name
+
+        try {
+            Copy-Item -Path $mostRecentFile.FullName -Destination $destinationPath -Force
+            $msg = "Source file match: Copied '$($mostRecentFile.Name)' from $($settings.SourceDirectory) to $($appFolder.FullName)."
+            Write-Log $msg "INFO"
+            Write-ExecutionLog -settings $settings -message $msg -logType 'INFO'
+            $succeeded.Add("$appName  ←  $($mostRecentFile.Name)")
+        }
+        catch {
+            $msg = "Source file match: Failed to copy '$($mostRecentFile.Name)' to $($appFolder.FullName). $_"
+            Write-Log $msg "ERROR"
+            Write-ExecutionLog -settings $settings -message $msg -logType 'ERROR'
+            $failed.Add($appName)
+        }
+    }
+
+    $summary = ""
+    if ($succeeded.Count -gt 0) {
+        $summary += "Copied ($($succeeded.Count)):`n" + ($succeeded -join "`n") + "`n`n"
+    }
+    if ($skipped.Count -gt 0) {
+        $summary += "No match found ($($skipped.Count)):`n" + ($skipped -join ", ") + "`n`n"
+    }
+    if ($failed.Count -gt 0) {
+        $summary += "Errors ($($failed.Count)):`n" + ($failed -join ", ")
+    }
+
+    $icon = if ($failed.Count -gt 0) { "Warning" } else { "Information" }
+    [System.Windows.MessageBox]::Show($summary.TrimEnd(), "Match All Files Complete", "OK", $icon)
+
+    $completionMsg = "Match All Files complete — Copied: $($succeeded.Count), Skipped: $($skipped.Count), Failed: $($failed.Count)."
+    Write-Log "=== $completionMsg ===" "INFO"
+    Write-ExecutionLog -settings $settings -message $completionMsg -logType 'INFO'
 }
 
 # ------------------------
@@ -753,6 +956,21 @@ function Show-MainWindow {
     [Windows.Controls.DockPanel]::SetDock($processOnlyButton, 'Left')
     $runPanelInner.Children.Add($processOnlyButton)
 
+    $matchFilesButton = New-Object Windows.Controls.Button
+    $matchFilesButton.Content = "Match Files"
+    $matchFilesButton.Padding = '12,6'
+    $matchFilesButton.Margin = '0,0,6,0'
+    $matchFilesButton.Background = New-Object Windows.Media.SolidColorBrush (New-Object Windows.Media.ColorConverter).ConvertFromString("#5C6BC0")
+    $matchFilesButton.Foreground = [System.Windows.Media.Brushes]::White
+    $matchFilesButton.FontWeight = 'SemiBold'
+    $matchFilesButton.FontSize = 12
+    $matchFilesButton.BorderThickness = '0'
+    $matchFilesButton.Cursor = 'Hand'
+    $matchFilesButton.IsEnabled = $false
+    $matchFilesButton.ToolTip = "Copy the most recent matching file from the Source Directory into this app's folder (requires Source Directory to be configured in Settings)"
+    [Windows.Controls.DockPanel]::SetDock($matchFilesButton, 'Left')
+    $runPanelInner.Children.Add($matchFilesButton)
+
     $uploadAppButton = New-Object Windows.Controls.Button
     $uploadAppButton.Content = "Upload to ISC"
     $uploadAppButton.Padding = '12,6'
@@ -1032,6 +1250,13 @@ function Show-MainWindow {
             Tooltip = "Directory containing app-specific folders with config.json files. Example: C:\SailPoint\Import"
         },
         @{ 
+            Label = "Source Directory"
+            Name = "SourceDirectory"
+            Value = $settings.SourceDirectory
+            Type = "Folder"
+            Tooltip = "Optional directory to pull source files from. Files whose names contain the app folder name will be copied in automatically before processing. Leave blank to disable."
+        },
+        @{ 
             Label = "File Upload Utility JAR"
             Name = "FileUploadUtility"
             Value = $settings.FileUploadUtility
@@ -1304,23 +1529,43 @@ function Show-MainWindow {
     $optionsPanel.Children.Add($fileDeletionCheckBox)
     $script:fileDeletionCheckBox = $fileDeletionCheckBox
 
+    # Save Settings Button Row
+    $settingsButtonPanel = New-Object Windows.Controls.StackPanel
+    $settingsButtonPanel.Orientation = 'Horizontal'
+    $settingsButtonPanel.Margin = '0,20,0,15'
+    $tab2StackPanel.Children.Add($settingsButtonPanel)
+
     # Save Settings Button
     $saveButton = New-Object Windows.Controls.Button
     $saveButton.Content = "Save Settings"
     $saveButton.Padding = '15,10'
-    $saveButton.Margin = '0,20,0,15'
+    $saveButton.Margin = '0,0,12,0'
     $saveButton.Background = New-Object Windows.Media.SolidColorBrush (New-Object Windows.Media.ColorConverter).ConvertFromString("#0033A1")
     $saveButton.Foreground = [System.Windows.Media.Brushes]::White
     $saveButton.FontWeight = 'Bold'
     $saveButton.FontSize = 14
     $saveButton.BorderThickness = '0'
     $saveButton.Cursor = 'Hand'
-    $tab2StackPanel.Children.Add($saveButton)
+    $settingsButtonPanel.Children.Add($saveButton)
+
+    # Match All Files Button
+    $matchAllFilesButton = New-Object Windows.Controls.Button
+    $matchAllFilesButton.Content = "Match All Files"
+    $matchAllFilesButton.Padding = '15,10'
+    $matchAllFilesButton.Background = New-Object Windows.Media.SolidColorBrush (New-Object Windows.Media.ColorConverter).ConvertFromString("#5C6BC0")
+    $matchAllFilesButton.Foreground = [System.Windows.Media.Brushes]::White
+    $matchAllFilesButton.FontWeight = 'Bold'
+    $matchAllFilesButton.FontSize = 14
+    $matchAllFilesButton.BorderThickness = '0'
+    $matchAllFilesButton.Cursor = 'Hand'
+    $matchAllFilesButton.ToolTip = "Copy the most recent matching file from the Source Directory into every app folder (matches by filename containing the app folder name)"
+    $settingsButtonPanel.Children.Add($matchAllFilesButton)
 
     $saveButton.Add_Click({
         # Update settings object
         $settings.ParentDirectory = $script:textBoxes['ParentDirectory'].Text
         $settings.AppFolder = $script:textBoxes['AppFolder'].Text
+        $settings.SourceDirectory = $script:textBoxes['SourceDirectory'].Text
         $settings.FileUploadUtility = $script:textBoxes['FileUploadUtility'].Text
         $settings.ExecutionLogDir = $script:textBoxes['ExecutionLogDir'].Text
         $settings.tenant = $script:textBoxes['tenant'].Text
@@ -1337,6 +1582,15 @@ function Show-MainWindow {
         else {
             [System.Windows.MessageBox]::Show("Failed to save settings. Check the log for details.", "Error", "OK", "Error")
         }
+    })
+
+    $matchAllFilesButton.Add_Click({
+        $currentSettings = Load-Settings
+        if ($null -eq $currentSettings) {
+            [System.Windows.MessageBox]::Show("Failed to load settings!", "Error", "OK", "Error")
+            return
+        }
+        Run-MatchAllFiles -settings $currentSettings
     })
 
     # RIGHT PANEL: Execution Log Viewer
@@ -2615,6 +2869,7 @@ function Show-MainWindow {
         $saveConfigButton.IsEnabled = $false
         $reloadConfigButton.IsEnabled = $false
         $processOnlyButton.IsEnabled = $false
+        $matchFilesButton.IsEnabled = $false
         $uploadAppButton.IsEnabled = $false
         $uploadUserListButton.IsEnabled = $false
         $openAppLogButton.IsEnabled = $false
@@ -2918,6 +3173,7 @@ function Show-MainWindow {
                 $saveConfigButton.IsEnabled = $true
                 $reloadConfigButton.IsEnabled = $true
                 $processOnlyButton.IsEnabled = $true
+                $matchFilesButton.IsEnabled = $true
                 $uploadAppButton.IsEnabled = $true
                 $uploadUserListButton.IsEnabled = $true
                 $script:currentConfigPath = $configFilePath
@@ -3093,6 +3349,29 @@ function Show-MainWindow {
             catch {
                 Write-Log "ERROR during process-only run for $script:selectedAppName : $_" "ERROR"
                 [System.Windows.MessageBox]::Show("Process error: $_", "Process Error", "OK", "Error")
+            }
+        }
+    })
+
+    # Match Files Button Handler
+    $matchFilesButton.Add_Click({
+        if ($script:selectedAppName) {
+            try {
+                $currentSettings = Load-Settings
+
+                if ($null -eq $currentSettings) {
+                    [System.Windows.MessageBox]::Show("Failed to load settings!", "Error", "OK", "Error")
+                    return
+                }
+
+                Run-FileMatchOnly -settings $currentSettings -appName $script:selectedAppName
+
+                # Refresh logs after run
+                & $reloadAppLogs
+            }
+            catch {
+                Write-Log "ERROR during file match for $script:selectedAppName : $_" "ERROR"
+                [System.Windows.MessageBox]::Show("File match error: $_", "Error", "OK", "Error")
             }
         }
     })
