@@ -1261,7 +1261,7 @@ function Show-MainWindow {
             Name = "FileUploadUtility"
             Value = $settings.FileUploadUtility
             Type = "File"
-            Tooltip = "Path to SailPoint file-upload-utility.jar (version 4.1.0 or higher). Download from SailPoint GitHub."
+            Tooltip = "Path to SailPoint file-upload-utility.jar (version 4.1.0 or higher). Download from SailPoint."
         },
         @{ 
             Label = "Execution Log Directory"
@@ -1429,7 +1429,7 @@ function Show-MainWindow {
     $clientIDLabel.FontWeight = 'Normal'
     $clientIDLabel.Margin = '0,8,0,3'
     $clientIDLabel.FontSize = 12
-    $clientIDLabel.ToolTip = "OAuth Client ID from your SailPoint API credentials (Admin > API Management > Create Token)"
+    $clientIDLabel.ToolTip = "OAuth Client ID from your SailPoint API credentials (Admin > Preferences > API)"
     $credentialsPanel.Children.Add($clientIDLabel)
 
     $clientIDTextBox = New-Object Windows.Controls.TextBox
@@ -1440,7 +1440,7 @@ function Show-MainWindow {
     $clientIDTextBox.FontSize = 12
     $clientIDTextBox.BorderBrush = New-Object Windows.Media.SolidColorBrush (New-Object Windows.Media.ColorConverter).ConvertFromString("#DAE1E9")
     $clientIDTextBox.BorderThickness = '1'
-    $clientIDTextBox.ToolTip = "OAuth Client ID from your SailPoint API credentials (Admin > API Management > Create Token)"
+    $clientIDTextBox.ToolTip = "OAuth Client ID from your SailPoint API credentials (Admin > Prefereces > API)"
     $credentialsPanel.Children.Add($clientIDTextBox)
     $script:textBoxes['ClientID'] = $clientIDTextBox
 

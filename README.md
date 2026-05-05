@@ -61,9 +61,7 @@ It covers system requirements, setup steps, configuration details, scheduling op
 ### Required Files
 - `SailpointUtilityGUI.ps1` (GUI management console  **recommended for all setup and daily use**)
 - `FileUploadScript.ps1` (main execution script  runs headless for scheduled tasks)
-- `DirectoryCreateScriptv3.ps1` (standalone directory creation script  also integrated into the GUI)
 - `CheckPrerequisites.ps1` (optional  validates environment before first run)
-- `FileMatcher.ps1` (legacy standalone utility  source file matching is now built into the GUI and `FileUploadScript.ps1`)
 - `settings.json` (global settings file  created automatically by the GUI if missing)
 - `config.json` (per-app configuration file  created automatically during directory creation)
 - SailPoint File Upload Utility JAR file (e.g., `sailpoint-file-upload-utility-4.1.0.jar`)

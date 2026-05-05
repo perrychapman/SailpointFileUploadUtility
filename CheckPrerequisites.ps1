@@ -120,8 +120,7 @@ if (Test-Path ".\settings.json") {
 Write-Host "Checking required scripts..." -NoNewline
 $requiredScripts = @(
     "SailpointUtilityGUI.ps1",
-    "FileUploadScript.ps1",
-    "DirectoryCreateScriptv3.ps1"
+    "FileUploadScript.ps1"
 )
 
 $missingScripts = @()
