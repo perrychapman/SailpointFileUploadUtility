@@ -6,14 +6,17 @@
 1. *(Optional)* Run `.\CheckPrerequisites.ps1` to verify your environment
 2. Run `.\SailpointUtilityGUI.ps1` to launch the GUI
 3. Go to the **Settings** tab  configure credentials and paths, then click **Save Settings**
-4. Go to the **App Management** tab  click **App Management**, select apps, click **Apply Changes**
-5. Place source files in `Import/[AppName]/` folders
-6. Select an app in the dropdown and click **Upload Files**
+4. *(Optional)* Set **Source Directory** in the Settings tab to a central folder where source files are dropped; the script will automatically match and copy files into the correct app folders by filename
+5. Go to the **App Management** tab  click **App Management**, select apps, click **Apply Changes**
+6. Place source files in `Import/[AppName]/` folders (or in `SourceDirectory` if file matching is configured)
+7. Select an app in the dropdown and click **Upload Files**
 
 ### Daily Operations
-1. Place updated source files in `Import/[AppName]/` folders
-2. Launch GUI (`.\SailpointUtilityGUI.ps1`), select the app, click **Upload Files**
-3.  OR  let the scheduled Task Scheduler job run automatically
+**Manual:** Place updated source files in `Import/[AppName]/` folders, launch GUI, select the app, click **Upload Files**
+
+**With File Matching:** Drop updated source files into `SourceDirectory`  use **Match All Files** (Settings tab) to push all files to their app folders in one click, then run uploads  OR let the scheduled Task Scheduler job do it automatically
+
+**Headless/Scheduled:** `FileUploadScript.ps1` runs file matching automatically at the start of each app's run if `SourceDirectory` is set
 
 ##  File Locations
 
