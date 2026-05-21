@@ -21,9 +21,7 @@
 |-------------|---------|
 | `SailpointUtilityGUI.ps1` | Main GUI interface (tabbed: App Management + Settings) |
 | `FileUploadScript.ps1` | Headless upload script (used by GUI and Task Scheduler) |
-| `DirectoryCreateScriptv3.ps1` | Standalone directory creation script |
 | `CheckPrerequisites.ps1` | Environment validation (PowerShell, Java, JAR, settings) |
-| `FileMatcher.ps1` | Legacy standalone file matcher (matching is now built-in) |
 | `settings.json` | Global configuration (auto-created by GUI if missing) |
 | `Import/[AppName]/` | Drop source files here for processing |
 | `Import/[AppName]/config.json` | Per-app configuration (auto-created) |
